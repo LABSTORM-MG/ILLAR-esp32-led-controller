@@ -35,7 +35,7 @@ Devices are reachable by mDNS hostname (e.g. `led-node-1.local`) or IP address.
 
 ## Required Libraries
 
-Install via Arduino Library Manager:
+Install via Arduino Library Manager (also install **esp32 by Espressif Systems** via Boards Manager):
 - `FastLED` by Daniel Garcia
 - `WebSockets` by Markus Sattler
 - `ArduinoJson` by Benoit Blanchon (v6)
