@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32 LED Controller</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f4f0;
+    --surface: #ffffff;
+    --surface2: #f1efe8;
+    --border: rgba(0,0,0,0.12);
+    --border2: rgba(0,0,0,0.22);
+    --text: #1a1a18;
+    --text2: #5f5e5a;
+    --text3: #888780;
+    --accent: #185fa5;
+    --accent-bg: #e6f1fb;
+    --success: #3b6d11;
+    --success-bg: #eaf3de;
+    --danger: #a32d2d;
+    --danger-bg: #fcebeb;
+    --warn-bg: #faeeda;
+    --warn: #854f0b;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a;
+      --surface: #26261f;
+      --surface2: #2e2e25;
+      --border: rgba(255,255,255,0.1);
+      --border2: rgba(255,255,255,0.2);
+      --text: #f1efe8;
+      --text2: #b4b2a9;
+      --text3: #888780;
+      --accent: #85b7eb;
+      --accent-bg: #042c53;
+      --success-bg: #173404;
+      --success: #c0dd97;
+      --danger-bg: #501313;
+      --danger: #f09595;
+      --warn-bg: #412402;
+      --warn: #fac775;
+    }
+  }
+
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 24px 16px 48px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text3); margin-bottom: 12px; }
+
+  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .header-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text3); flex-shrink: 0; }
+
+  .nodes-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
+  @media (max-width: 640px) { .nodes-grid { grid-template-columns: 1fr; } }
+
+  .node-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    position: relative;
+  }
+  .node-card:hover { border-color: var(--border2); }
+  .node-card.selected { border: 2px solid var(--accent); background: var(--accent-bg); }
+
+  .node-title { font-weight: 600; font-size: 15px; margin-bottom: 2px; }
+  .node-url { font-size: 12px; color: var(--text3); font-family: monospace; margin-bottom: 8px; word-break: break-all; }
+
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 500; padding: 2px 8px;
+    border-radius: 20px; border: 0.5px solid transparent;
+  }
+  .status-badge .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .badge-disconnected { background: var(--surface2); color: var(--text3); border-color: var(--border); }
+  .badge-disconnected .dot { background: var(--text3); }
+  .badge-connecting { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+  .badge-connecting .dot { background: var(--warn); animation: pulse 0.8s infinite alternate; }
+  .badge-connected { background: var(--success-bg); color: var(--success); border-color: var(--success); }
+  .badge-connected .dot { background: var(--success); }
+  .badge-error { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
+  .badge-error .dot { background: var(--danger); }
+
+  @keyframes pulse { from { opacity: 1; } to { opacity: 0.3; } }
+
+  .node-actions { display: flex; gap: 6px; margin-top: 10px; }
+
+  .section {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin-bottom: 14px;
+  }
+
+  .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }
+  .row:last-child { margin-bottom: 0; }
+
+  label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; font-weight: 500; }
+
+  input[type=text], input[type=number], select {
+    height: 34px; padding: 0 10px; font-size: 13px;
+    border: 0.5px solid var(--border2); border-radius: var(--radius-sm);
+    background: var(--surface2); color: var(--text);
+    outline: none;
+  }
+  input[type=text]:focus, input[type=number]:focus, select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+  input[type=number] { width: 70px; }
+
+  input[type=color] {
+    width: 40px; height: 34px; padding: 2px; cursor: pointer;
+    border: 0.5px solid var(--border2); border-radius: var(--radius-sm);
+    background: var(--surface2);
+  }
+
+  input[type=range] {
+    height: 4px; cursor: pointer; accent-color: var(--accent);
+    flex: 1; min-width: 80px;
+  }
+
+  .field { display: flex; flex-direction: column; }
+
+  btn, button {
+    height: 34px; padding: 0 14px; font-size: 13px; font-weight: 500;
+    border: 0.5px solid var(--border2); border-radius: var(--radius-sm);
+    background: var(--surface2); color: var(--text);
+    cursor: pointer; white-space: nowrap; transition: background 0.1s;
+  }
+  button:hover { background: var(--border); }
+  button:active { transform: scale(0.97); }
+  button.primary {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+  }
+  button.primary:hover { opacity: 0.88; }
+  button.danger-btn {
+    background: var(--danger-bg); color: var(--danger); border-color: var(--danger);
+  }
+  button.small { height: 28px; padding: 0 10px; font-size: 12px; }
+
+  .color-preview {
+    width: 34px; height: 34px; border-radius: var(--radius-sm);
+    border: 0.5px solid var(--border2); flex-shrink: 0;
+  }
+
+  .multi-leds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .led-chip {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface2); border: 0.5px solid var(--border);
+    border-radius: 20px; padding: 3px 10px 3px 6px; font-size: 12px;
+  }
+  .led-chip-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+  .led-chip-del { cursor: pointer; color: var(--text3); margin-left: 2px; font-size: 14px; line-height: 1; }
+  .led-chip-del:hover { color: var(--danger); }
+
+  .log-wrap {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .log-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 16px; border-bottom: 0.5px solid var(--border);
+  }
+  .log-box {
+    font-family: monospace; font-size: 12px; color: var(--text2);
+    height: 180px; overflow-y: auto; padding: 10px 16px;
+  }
+  .log-line { padding: 2px 0; border-bottom: 0.5px solid var(--border); }
+  .log-line:last-child { border-bottom: none; }
+  .log-out { color: var(--accent); }
+  .log-in  { color: var(--success); }
+  .log-err { color: var(--danger); }
+  .log-sys { color: var(--text3); }
+
+  .effect-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .effect-btn {
+    height: 38px; font-size: 12px; font-weight: 500;
+    border: 0.5px solid var(--border2); border-radius: var(--radius-sm);
+    background: var(--surface2); color: var(--text);
+    cursor: pointer; transition: background 0.1s;
+  }
+  .effect-btn:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+  .effect-btn.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+  .effect-btn.stop-btn:hover { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
+
+  .target-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    background: var(--surface2); border: 0.5px solid var(--border);
+    border-radius: var(--radius-sm); padding: 8px 12px; margin-bottom: 20px;
+    font-size: 12px; color: var(--text2);
+  }
+  .target-bar strong { color: var(--text); }
+  .target-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--accent-bg); color: var(--accent);
+    border: 0.5px solid var(--accent); border-radius: 20px;
+    padding: 1px 8px; font-size: 11px; font-weight: 500;
+  }
+
+  .divider { border: none; border-top: 0.5px solid var(--border); margin: 16px 0; }
+
+  .raw-section { margin-bottom: 14px; }
+  .raw-section textarea {
+    width: 100%; height: 80px; font-family: monospace; font-size: 12px;
+    padding: 8px 10px; resize: vertical;
+    border: 0.5px solid var(--border2); border-radius: var(--radius-sm);
+    background: var(--surface2); color: var(--text); outline: none;
+  }
+  .raw-section textarea:focus { border-color: var(--accent); }
+
+  .brightness-row { display: flex; align-items: center; gap: 12px; }
+  .brightness-val { font-size: 13px; font-weight: 500; min-width: 28px; }
+
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tab {
+    padding: 6px 14px; font-size: 13px; font-weight: 500;
+    border: 0.5px solid var(--border2); border-radius: var(--radius-sm);
+    cursor: pointer; background: var(--surface2); color: var(--text2);
+    transition: all 0.1s;
+  }
+  .tab.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-dot" id="global-dot"></div>
+  <div>
+    <h1>ESP32 LED Controller</h1>
+    <div style="font-size:12px;color:var(--text3);">WebSocket Dashboard</div>
+  </div>
+</div>
+
+<!-- Node Cards -->
+<h2>Nodes</h2>
+<div class="nodes-grid" id="nodes-grid"></div>
+
+<!-- Target bar -->
+<div class="target-bar" id="target-bar">
+  <span>Sending to:</span>
+  <span id="target-label" style="color:var(--text3)">No node selected</span>
+  <label style="margin:0;font-weight:normal;">
+    <input type="checkbox" id="broadcast-chk"> broadcast all
+  </label>
+</div>
+
+<!-- Tabs -->
+<div class="tab-bar">
+  <div class="tab active" data-tab="colour">Colour</div>
+  <div class="tab" data-tab="effects">Effects</div>
+  <div class="tab" data-tab="location">Locations</div>
+  <div class="tab" data-tab="address">Address</div>
+  <div class="tab" data-tab="raw">Raw JSON</div>
+</div>
+
+<!-- COLOUR TAB -->
+<div class="tab-panel active" id="tab-colour">
+  <div class="section">
+    <h2>Fill all LEDs</h2>
+    <div class="row">
+      <div class="field"><label>Colour</label><input type="color" id="fill-color" value="#ff0000"></div>
+      <div class="field" style="flex:1;min-width:160px;">
+        <label>Preview</label>
+        <div class="color-preview" id="fill-preview" style="background:#ff0000;width:100%;"></div>
+      </div>
+      <button class="primary" onclick="sendFill()">Fill all</button>
+      <button class="danger-btn" onclick="sendClear()">Clear</button>
+    </div>
+    <div class="brightness-row">
+      <label style="margin:0;min-width:72px;">Brightness</label>
+      <input type="range" id="bright-slider" min="0" max="255" value="255" oninput="brightUpdate(this.value)">
+      <span class="brightness-val" id="bright-val">255</span>
+      <button onclick="sendBrightness()" class="small">Set</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Single LED</h2>
+    <div class="row">
+      <div class="field"><label>Index</label><input type="number" id="single-idx" value="0" min="0"></div>
+      <div class="field"><label>Colour</label><input type="color" id="single-color" value="#00ff00"></div>
+      <button class="primary" onclick="sendSet()">Set LED</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Range</h2>
+    <div class="row">
+      <div class="field"><label>From</label><input type="number" id="range-from" value="0" min="0"></div>
+      <div class="field"><label>To</label><input type="number" id="range-to" value="9" min="0"></div>
+      <div class="field"><label>Colour</label><input type="color" id="range-color" value="#0000ff"></div>
+      <button class="primary" onclick="sendRange()">Set Range</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Multi — set individual LEDs</h2>
+    <div class="multi-leds" id="multi-chips"></div>
+    <div class="row">
+      <div class="field"><label>Index</label><input type="number" id="multi-idx" value="0" min="0"></div>
+      <div class="field"><label>Colour</label><input type="color" id="multi-color" value="#ff8800"></div>
+      <button onclick="addMultiLed()">+ Add LED</button>
+    </div>
+    <div class="row">
+      <button class="primary" onclick="sendMulti()">Send multi</button>
+      <button onclick="clearMulti()">Clear list</button>
+    </div>
+  </div>
+</div>
+
+<!-- EFFECTS TAB -->
+<div class="tab-panel" id="tab-effects">
+  <div class="section">
+    <h2>Built-in effects</h2>
+    <div class="effect-grid">
+      <button class="effect-btn" onclick="sendEffect('rainbow')">Rainbow</button>
+      <button class="effect-btn" onclick="sendEffect('chase')">Chase</button>
+      <button class="effect-btn" onclick="sendEffect('blink')">Blink</button>
+      <button class="effect-btn stop-btn" onclick="sendEffect('stop')">Stop</button>
+    </div>
+    <hr class="divider">
+    <div class="row">
+      <div class="field"><label>Effect colour</label><input type="color" id="eff-color" value="#ff4400"></div>
+      <div class="field" style="flex:1">
+        <label>Delay (ms) <span id="eff-delay-val">50</span></label>
+        <input type="range" id="eff-delay" min="10" max="500" value="50" oninput="document.getElementById('eff-delay-val').textContent=this.value">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LOCATION TAB -->
+<div class="tab-panel" id="tab-location">
+
+  <div class="section">
+    <h2>Send location command</h2>
+    <div class="row">
+      <div class="field" style="flex:1"><label>Location name</label><input type="text" id="loc-name" placeholder="A6" style="width:100%"></div>
+      <div class="field"><label>Colour</label><input type="color" id="loc-color" value="#ffffff"></div>
+      <div class="field"><label>Brightness</label><input type="number" id="loc-bright" value="255" min="0" max="255" style="width:70px"></div>
+    </div>
+    <div class="row">
+      <button class="primary" onclick="sendLocation()">Light location</button>
+      <button class="danger-btn" onclick="sendLocationClear()">Clear location</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Upload mapping file</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px;">
+      JSON file mapping location names to LED indices.<br>
+      Each value can be a single index or an array of indices.
+    </p>
+    <div style="background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-family:monospace;font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.8;">
+      { "A6": 5, "B3": 12, "C1": [3, 4, 5], "D2": 0 }
+    </div>
+
+    <div id="upload-drop-zone" style="border:1.5px dashed var(--border2);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;margin-bottom:12px;transition:border-color 0.15s;"
+      onclick="document.getElementById('map-file-input').click()"
+      ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+      ondragleave="this.style.borderColor='var(--border2)'"
+      ondrop="handleDrop(event)">
+      <div style="font-size:13px;color:var(--text2);">Drop <code>.json</code> file here or click to browse</div>
+      <div id="drop-filename" style="font-size:12px;color:var(--text3);margin-top:4px;"></div>
+    </div>
+    <input type="file" id="map-file-input" accept=".json,application/json" style="display:none" onchange="handleFileSelect(this)">
+
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px;color:var(--text2);margin-bottom:4px;display:block;">Or paste JSON directly</label>
+      <textarea id="map-json-paste" style="width:100%;height:100px;font-family:monospace;font-size:12px;padding:8px 10px;resize:vertical;border:0.5px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface2);color:var(--text);outline:none;" placeholder='{"A6":5,"B3":12}'></textarea>
+    </div>
+
+    <div class="row">
+      <button class="primary" onclick="uploadMapping()">Upload to node</button>
+      <button onclick="fetchMapping()">Fetch current</button>
+      <button class="danger-btn" onclick="deleteMapping()">Delete mapping</button>
+    </div>
+    <div id="upload-status" style="margin-top:10px;font-size:12px;"></div>
+  </div>
+
+  <div class="section" id="mapping-preview-section" style="display:none">
+    <h2>Current mapping <span id="mapping-count" style="font-weight:400;color:var(--text3)"></span></h2>
+    <div id="mapping-table-wrap" style="overflow-x:auto;max-height:240px;overflow-y:auto;">
+      <table id="mapping-table" style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:6px 8px;border-bottom:0.5px solid var(--border);color:var(--text2);font-weight:500;">Location</th>
+            <th style="text-align:left;padding:6px 8px;border-bottom:0.5px solid var(--border);color:var(--text2);font-weight:500;">LED index / indices</th>
+            <th style="padding:6px 8px;border-bottom:0.5px solid var(--border);"></th>
+          </tr>
+        </thead>
+        <tbody id="mapping-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- ADDRESS TAB -->
+<div class="tab-panel" id="tab-address">
+
+  <div class="section">
+    <h2>LED count</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px;">
+      Set the number of active LEDs on the selected node. Saved to flash — survives reboot. The firmware must be compiled with <code>MAX_LEDS</code> ≥ this value.
+    </p>
+    <div class="row" style="align-items:flex-end;">
+      <div class="field">
+        <label>Current (from device)</label>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span id="current-num-leds" style="font-size:20px;font-weight:600;min-width:40px;">—</span>
+          <button class="small" onclick="fetchNumLeds()">Fetch</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>New value</label>
+        <input type="number" id="new-num-leds" min="1" max="500" value="30" style="width:90px;">
+      </div>
+      <button class="primary" onclick="setNumLeds()">Set &amp; save</button>
+    </div>
+    <div id="num-leds-status" style="font-size:12px;margin-top:8px;"></div>
+  </div>
+
+  <div class="section">
+    <h2>Node settings</h2>
+    <div id="node-settings-list"></div>
+  </div>
+  <div class="section">
+    <h2>Add / edit node</h2>
+    <div class="row">
+      <div class="field" style="flex:1"><label>Name</label><input type="text" id="add-name" placeholder="led-node-1" style="width:100%"></div>
+      <div class="field" style="flex:2"><label>WebSocket URL</label><input type="text" id="add-url" placeholder="ws://led-node-1.local:81" style="width:100%"></div>
+      <button class="primary" onclick="addNode()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- RAW JSON TAB -->
+<div class="tab-panel" id="tab-raw">
+  <div class="section raw-section">
+    <h2>Send raw JSON</h2>
+    <textarea id="raw-json">{"cmd":"fill","r":255,"g":0,"b":0}</textarea>
+    <div class="row" style="margin-top:8px;">
+      <button class="primary" onclick="sendRaw()">Send</button>
+      <button onclick="formatRaw()">Format</button>
+      <select id="raw-templates" onchange="applyTemplate(this.value)" style="flex:1">
+        <option value="">— templates —</option>
+        <option value='{"cmd":"fill","r":255,"g":0,"b":0}'>fill red</option>
+        <option value='{"cmd":"clear"}'>clear</option>
+        <option value='{"cmd":"brightness","value":128}'>brightness 128</option>
+        <option value='{"cmd":"set","index":0,"r":255,"g":255,"b":255}'>set index 0 white</option>
+        <option value='{"cmd":"range","from":0,"to":9,"r":0,"g":255,"b":0}'>range 0-9 green</option>
+        <option value='{"cmd":"effect","name":"rainbow","delay":20}'>effect rainbow</option>
+        <option value='{"cmd":"effect","name":"chase","r":255,"g":128,"b":0,"delay":60}'>effect chase</option>
+        <option value='{"cmd":"effect","name":"blink","r":0,"g":0,"b":255,"delay":400}'>effect blink</option>
+        <option value='{"cmd":"effect","name":"stop"}'>effect stop</option>
+        <option value='{"cmd":"location","name":"A6","r":255,"g":255,"b":255}'>location A6 white</option>
+        <option value='{"cmd":"location","name":"A6","r":255,"g":0,"b":0,"brightness":180}'>location A6 red dim</option>
+        <option value='{"cmd":"location_clear","name":"A6"}'>location_clear A6</option>
+        <option value='{"cmd":"locations","items":[{"name":"A6","r":255,"g":0,"b":0},{"name":"B3","r":0,"g":255,"b":0}]}'>locations batch</option>
+        <option value='{"cmd":"set_leds","value":60}'>set_leds 60</option>
+        <option value='{"cmd":"get_config"}'>get_config</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- Log -->
+<div class="log-wrap">
+  <div class="log-header">
+    <h2 style="margin:0">Log</h2>
+    <button class="small" onclick="clearLog()">Clear</button>
+  </div>
+  <div class="log-box" id="log"></div>
+</div>
+
+<script>
+const DEFAULT_NODES = [
+  { name: "led-node-1", url: "ws://led-node-1.local:81" },
+  { name: "led-node-2", url: "ws://led-node-2.local:81" },
+  { name: "led-node-3", url: "ws://led-node-3.local:81" },
+];
+
+function initNodes(raw) {
+  return raw.map(n => ({ ws: null, state: "disconnected", ...n, ws: null, state: n.state === "connected" ? "disconnected" : (n.state || "disconnected") }));
+}
+
+const saved = localStorage.getItem("esp_nodes");
+let nodes = saved ? initNodes(JSON.parse(saved)) : DEFAULT_NODES.map(n => ({ ...n, ws: null, state: "disconnected" }));
+let selectedIdx = 0;
+let multiLeds = [];
+
+function saveNodes() {
+  localStorage.setItem("esp_nodes", JSON.stringify(nodes.map(({ ws, state, ...n }) => n)));
+}
+
+function log(msg, cls = "log-sys") {
+  const box = document.getElementById("log");
+  const ts = new Date().toLocaleTimeString();
+  const el = document.createElement("div");
+  el.className = "log-line " + cls;
+  el.textContent = `[${ts}] ${msg}`;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+}
+
+function clearLog() { document.getElementById("log").innerHTML = ""; }
+
+function connect(i) {
+  const node = nodes[i];
+  if (node.ws && [0, 1].includes(node.ws.readyState)) return;
+  node.state = "connecting";
+  renderNodes();
+  log(`Connecting to ${node.name} (${node.url})...`);
+  const ws = new WebSocket(node.url);
+  node.ws = ws;
+  ws.onopen = () => {
+    node.state = "connected";
+    renderNodes();
+    log(`${node.name} connected`, "log-in");
+  };
+  ws.onmessage = (e) => {
+    log(`← ${node.name}: ${e.data}`, "log-in");
+  };
+  ws.onerror = () => {
+    node.state = "error";
+    renderNodes();
+    log(`${node.name} error`, "log-err");
+  };
+  ws.onclose = () => {
+    if (node.state !== "error") node.state = "disconnected";
+    node.ws = null;
+    renderNodes();
+    log(`${node.name} disconnected`, "log-sys");
+  };
+}
+
+function disconnect(i) {
+  const node = nodes[i];
+  if (node.ws) { node.ws.close(); node.ws = null; }
+  node.state = "disconnected";
+  renderNodes();
+}
+
+function statusClass(state) {
+  return { connected: "badge-connected", disconnected: "badge-disconnected", connecting: "badge-connecting", error: "badge-error" }[state] || "badge-disconnected";
+}
+function statusLabel(state) {
+  return { connected: "Connected", disconnected: "Disconnected", connecting: "Connecting…", error: "Error" }[state] || state;
+}
+
+function renderNodes() {
+  const grid = document.getElementById("nodes-grid");
+  grid.innerHTML = "";
+  nodes.forEach((node, i) => {
+    const card = document.createElement("div");
+    card.className = "node-card" + (i === selectedIdx ? " selected" : "");
+    card.onclick = () => { selectedIdx = i; renderNodes(); renderTargetBar(); };
+    card.innerHTML = `
+      <div class="node-title">${escHtml(node.name)}</div>
+      <div class="node-url">${escHtml(node.url)}</div>
+      <div class="status-badge ${statusClass(node.state)}">
+        <div class="dot"></div>${statusLabel(node.state)}
+      </div>
+      <div class="node-actions">
+        ${node.state === "connected"
+          ? `<button class="small danger-btn" onclick="event.stopPropagation();disconnect(${i})">Disconnect</button>`
+          : `<button class="small primary" onclick="event.stopPropagation();connect(${i})">Connect</button>`}
+        <button class="small" onclick="event.stopPropagation();removeNode(${i})">Remove</button>
+      </div>`;
+    grid.appendChild(card);
+  });
+
+  const dot = document.getElementById("global-dot");
+  const anyConnected = nodes.some(n => n.state === "connected");
+  dot.style.background = anyConnected ? "var(--success)" : "var(--text3)";
+
+  renderTargetBar();
+  renderNodeSettings();
+}
+
+function renderTargetBar() {
+  const broadcast = document.getElementById("broadcast-chk").checked;
+  const tl = document.getElementById("target-label");
+  if (broadcast) {
+    const connected = nodes.filter(n => n.state === "connected");
+    if (connected.length === 0) {
+      tl.innerHTML = `<span style="color:var(--text3)">No nodes connected</span>`;
+    } else {
+      tl.innerHTML = connected.map(n => `<span class="target-pill">${escHtml(n.name)}</span>`).join(" ");
+    }
+  } else {
+    const node = nodes[selectedIdx];
+    if (!node) { tl.innerHTML = `<span style="color:var(--text3)">No node selected</span>`; return; }
+    tl.innerHTML = `<span class="target-pill">${escHtml(node.name)}</span> <span style="color:var(--text3)">${escHtml(node.url)}</span>`;
+  }
+}
+
+function renderNodeSettings() {
+  const el = document.getElementById("node-settings-list");
+  if (!el) return;
+  el.innerHTML = nodes.map((n, i) => `
+    <div class="row" style="border-bottom:0.5px solid var(--border);padding-bottom:10px;margin-bottom:10px;">
+      <div class="field" style="flex:1"><label>Name</label>
+        <input type="text" value="${escHtml(n.name)}" oninput="nodes[${i}].name=this.value;saveNodes();renderNodes()" style="width:100%">
+      </div>
+      <div class="field" style="flex:2"><label>URL</label>
+        <input type="text" value="${escHtml(n.url)}" oninput="nodes[${i}].url=this.value;saveNodes()" style="width:100%">
+      </div>
+    </div>`).join("");
+}
+
+function removeNode(i) {
+  if (!confirm(`Remove ${nodes[i].name}?`)) return;
+  if (nodes[i].ws) nodes[i].ws.close();
+  nodes.splice(i, 1);
+  selectedIdx = nodes.length === 0 ? 0 : Math.min(selectedIdx, nodes.length - 1);
+  saveNodes();
+  renderNodes();
+}
+
+function addNode() {
+  const name = document.getElementById("add-name").value.trim();
+  const url  = document.getElementById("add-url").value.trim();
+  if (!name || !url) { log("Name and URL are required.", "log-err"); return; }
+  nodes.push({ name, url, ws: null, state: "disconnected" });
+  selectedIdx = nodes.length - 1;
+  saveNodes();
+  renderNodes();
+  document.getElementById("add-name").value = "";
+  document.getElementById("add-url").value = "";
+  log(`Added node: ${name} (${url})`, "log-sys");
+}
+
+function getTargets() {
+  if (document.getElementById("broadcast-chk").checked) {
+    return nodes.filter(n => n.state === "connected");
+  }
+  const node = nodes[selectedIdx];
+  return node ? [node] : [];
+}
+
+function send(payload) {
+  const targets = getTargets();
+  if (targets.length === 0) { log("No connected node targeted.", "log-err"); return; }
+  const msg = JSON.stringify(payload);
+  targets.forEach(node => {
+    if (!node.ws || node.ws.readyState !== 1) {
+      log(`${node.name} not connected`, "log-err"); return;
+    }
+    node.ws.send(msg);
+    log(`→ ${node.name}: ${msg}`, "log-out");
+  });
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return { r, g, b };
+}
+
+function sendFill() {
+  const c = hexToRgb(document.getElementById("fill-color").value);
+  send({ cmd: "fill", ...c });
+}
+function sendClear() { send({ cmd: "clear" }); }
+function sendSet() {
+  const c = hexToRgb(document.getElementById("single-color").value);
+  send({ cmd: "set", index: parseInt(document.getElementById("single-idx").value), ...c });
+}
+function sendRange() {
+  const c = hexToRgb(document.getElementById("range-color").value);
+  send({ cmd: "range", from: parseInt(document.getElementById("range-from").value), to: parseInt(document.getElementById("range-to").value), ...c });
+}
+function sendBrightness() {
+  send({ cmd: "brightness", value: parseInt(document.getElementById("bright-slider").value) });
+}
+function brightUpdate(v) { document.getElementById("bright-val").textContent = v; }
+
+function addMultiLed() {
+  const idx = parseInt(document.getElementById("multi-idx").value);
+  const hex = document.getElementById("multi-color").value;
+  const c = hexToRgb(hex);
+  multiLeds.push({ i: idx, ...c, hex });
+  renderMultiChips();
+}
+function clearMulti() { multiLeds = []; renderMultiChips(); }
+function renderMultiChips() {
+  const el = document.getElementById("multi-chips");
+  el.innerHTML = multiLeds.map((led, i) =>
+    `<div class="led-chip">
+      <div class="led-chip-dot" style="background:${led.hex}"></div>
+      <span>#${led.i}</span>
+      <span class="led-chip-del" onclick="multiLeds.splice(${i},1);renderMultiChips()">×</span>
+    </div>`).join("");
+}
+function sendMulti() {
+  if (multiLeds.length === 0) { log("Add some LEDs first", "log-err"); return; }
+  send({ cmd: "multi", leds: multiLeds.map(({ hex, ...l }) => l) });
+}
+
+function sendEffect(name) {
+  const c = hexToRgb(document.getElementById("eff-color").value);
+  const delay = parseInt(document.getElementById("eff-delay").value);
+  const payload = { cmd: "effect", name };
+  if (name !== "stop") { payload.r = c.r; payload.g = c.g; payload.b = c.b; payload.delay = delay; }
+  send(payload);
+  document.querySelectorAll(".effect-btn").forEach(b => b.classList.remove("active"));
+  if (name !== "stop") event.target.classList.add("active");
+}
+
+function sendRaw() {
+  const raw = document.getElementById("raw-json").value.trim();
+  try {
+    const obj = JSON.parse(raw);
+    send(obj);
+  } catch(e) { log("Invalid JSON: " + e.message, "log-err"); }
+}
+function formatRaw() {
+  try {
+    const obj = JSON.parse(document.getElementById("raw-json").value);
+    document.getElementById("raw-json").value = JSON.stringify(obj, null, 2);
+  } catch(e) { log("Invalid JSON", "log-err"); }
+}
+function applyTemplate(v) {
+  if (v) document.getElementById("raw-json").value = v;
+  document.getElementById("raw-templates").value = "";
+}
+
+document.getElementById("fill-color").addEventListener("input", e => {
+  document.getElementById("fill-preview").style.background = e.target.value;
+});
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+  });
+});
+
+document.getElementById("broadcast-chk").addEventListener("change", renderTargetBar);
+
+function escHtml(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+// ── Location commands ────────────────────────
+function sendLocation() {
+  const name = document.getElementById("loc-name").value.trim();
+  if (!name) { log("Enter a location name.", "log-err"); return; }
+  const c = hexToRgb(document.getElementById("loc-color").value);
+  const bright = parseInt(document.getElementById("loc-bright").value);
+  send({ cmd: "location", name, ...c, brightness: bright });
+}
+function sendLocationClear() {
+  const name = document.getElementById("loc-name").value.trim();
+  if (!name) { log("Enter a location name.", "log-err"); return; }
+  send({ cmd: "location_clear", name });
+}
+
+// ── Mapping upload ───────────────────────────
+let pendingMapJson = null;
+
+function getHttpBase() {
+  const node = nodes[selectedIdx];
+  if (!node) return null;
+  // Convert ws://host:81 → http://host:80
+  return node.url.replace(/^ws(s?):\/\//, "http$1://").replace(/:81$/, "").replace(/:80$/, "") + ":80";
+}
+
+function setUploadStatus(msg, ok = null) {
+  const el = document.getElementById("upload-status");
+  el.textContent = msg;
+  el.style.color = ok === true ? "var(--success)" : ok === false ? "var(--danger)" : "var(--text3)";
+}
+
+function handleFileSelect(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById("map-json-paste").value = e.target.result;
+    document.getElementById("drop-filename").textContent = file.name;
+    pendingMapJson = e.target.result;
+    setUploadStatus("File loaded — click Upload to send.");
+    try { renderMappingPreview(JSON.parse(e.target.result)); } catch(e) {}
+  };
+  reader.readAsText(file);
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById("upload-drop-zone").style.borderColor = "var(--border2)";
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  document.getElementById("map-file-input").files = e.dataTransfer.files;
+  handleFileSelect({ files: e.dataTransfer.files });
+}
+
+async function uploadMapping() {
+  const base = getHttpBase();
+  if (!base) { log("Select a node first.", "log-err"); return; }
+
+  const raw = document.getElementById("map-json-paste").value.trim();
+  if (!raw) { setUploadStatus("Paste or load a JSON file first.", false); return; }
+
+  try { JSON.parse(raw); } catch(e) { setUploadStatus("Invalid JSON: " + e.message, false); return; }
+
+  setUploadStatus("Uploading…");
+  try {
+    const res = await fetch(`${base}/upload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: raw
+    });
+    const data = await res.json();
+    if (data.ok) {
+      setUploadStatus(`Uploaded! ${data.locations} location(s) stored on device.`, true);
+      log(`Mapping uploaded to ${nodes[selectedIdx].name}: ${data.locations} locations`, "log-in");
+      renderMappingPreview(JSON.parse(raw));
+    } else {
+      setUploadStatus("Error: " + (data.error || "unknown"), false);
+    }
+  } catch(e) {
+    setUploadStatus("Upload failed: " + e.message, false);
+    log("Upload error: " + e.message, "log-err");
+  }
+}
+
+async function fetchMapping() {
+  const base = getHttpBase();
+  if (!base) { log("Select a node first.", "log-err"); return; }
+  setUploadStatus("Fetching…");
+  try {
+    const res = await fetch(`${base}/mapping`);
+    if (res.status === 404) { setUploadStatus("No mapping on device.", false); return; }
+    const data = await res.json();
+    const pretty = JSON.stringify(data, null, 2);
+    document.getElementById("map-json-paste").value = pretty;
+    setUploadStatus(`Fetched from device — ${Object.keys(data).length} location(s).`, true);
+    renderMappingPreview(data);
+    log(`Fetched mapping from ${nodes[selectedIdx].name}`, "log-in");
+  } catch(e) {
+    setUploadStatus("Fetch failed: " + e.message, false);
+  }
+}
+
+async function deleteMapping() {
+  const base = getHttpBase();
+  if (!base) { log("Select a node first.", "log-err"); return; }
+  if (!confirm("Delete mapping from device?")) return;
+  try {
+    const res = await fetch(`${base}/mapping`, { method: "DELETE" });
+    const data = await res.json();
+    if (data.ok) {
+      setUploadStatus("Mapping deleted from device.", true);
+      document.getElementById("mapping-preview-section").style.display = "none";
+      log(`Mapping deleted from ${nodes[selectedIdx].name}`, "log-sys");
+    }
+  } catch(e) {
+    setUploadStatus("Delete failed: " + e.message, false);
+  }
+}
+
+function renderMappingPreview(obj) {
+  const section = document.getElementById("mapping-preview-section");
+  const tbody   = document.getElementById("mapping-tbody");
+  const count   = document.getElementById("mapping-count");
+  const keys = Object.keys(obj);
+  count.textContent = `(${keys.length} locations)`;
+  tbody.innerHTML = keys.map(k => {
+    const val = Array.isArray(obj[k]) ? obj[k].join(", ") : obj[k];
+    return `<tr>
+      <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);font-weight:500;">${escHtml(k)}</td>
+      <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);font-family:monospace;color:var(--text2);">${escHtml(String(val))}</td>
+      <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);">
+        <button class="small" onclick="quickLight('${escHtml(k)}')">Light</button>
+      </td>
+    </tr>`;
+  }).join("");
+  section.style.display = "block";
+}
+
+function quickLight(name) {
+  const c = hexToRgb(document.getElementById("loc-color").value);
+  const bright = parseInt(document.getElementById("loc-bright").value);
+  send({ cmd: "location", name, ...c, brightness: bright });
+}
+
+// ── LED count ────────────────────────────────
+function setNumLedsStatus(msg, ok = null) {
+  const el = document.getElementById("num-leds-status");
+  el.textContent = msg;
+  el.style.color = ok === true ? "var(--success)" : ok === false ? "var(--danger)" : "var(--text3)";
+}
+
+async function fetchNumLeds() {
+  const base = getHttpBase();
+  if (!base) { setNumLedsStatus("Select a node first.", false); return; }
+  setNumLedsStatus("Fetching…");
+  try {
+    const res = await fetch(`${base}/config`);
+    const data = await res.json();
+    document.getElementById("current-num-leds").textContent = data.num_leds;
+    document.getElementById("new-num-leds").value = data.num_leds;
+    setNumLedsStatus(`Device reports ${data.num_leds} LEDs (max ${data.max_leds}).`, true);
+  } catch(e) {
+    setNumLedsStatus("Fetch failed: " + e.message, false);
+  }
+}
+
+async function setNumLeds() {
+  const base = getHttpBase();
+  if (!base) { setNumLedsStatus("Select a node first.", false); return; }
+  const n = parseInt(document.getElementById("new-num-leds").value);
+  if (!n || n < 1) { setNumLedsStatus("Enter a valid number.", false); return; }
+  setNumLedsStatus("Saving…");
+  try {
+    const res = await fetch(`${base}/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ num_leds: n })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById("current-num-leds").textContent = data.num_leds;
+      setNumLedsStatus(`Set to ${data.num_leds} LEDs and saved to flash.`, true);
+      log(`${nodes[selectedIdx].name}: num_leds set to ${data.num_leds}`, "log-in");
+    } else {
+      setNumLedsStatus("Error: " + (data.error || "unknown"), false);
+    }
+  } catch(e) {
+    setNumLedsStatus("Failed: " + e.message, false);
+  }
+}
+
+renderNodes();
+log("Dashboard ready. Select a node and click Connect.", "log-sys");
+</script>
+</body>
+</html>
