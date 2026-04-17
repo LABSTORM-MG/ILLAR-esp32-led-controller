@@ -1,6 +1,6 @@
 # ILLAR ESP32 LED Controller
 
-ESP32-C6 firmware for WS2812B LED shelf guidance, part of the [ILLAR](https://github.com/LABSTORM-MG) warehouse system.
+ESP32-C6 firmware for WS2812B LED shelf guidance, part of the ILLAR warehouse system.
 
 ## Setup
 
