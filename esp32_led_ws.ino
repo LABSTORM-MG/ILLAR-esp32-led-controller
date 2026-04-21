@@ -38,19 +38,22 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
-  // Mutex must exist before effectTask starts
-  ledMutex = xSemaphoreCreateMutex();
+  // Queue and mutex must exist before renderTask starts
+  renderQueue = xQueueCreate(8, sizeof(LedCommand));
+  batchMutex  = xSemaphoreCreateMutex();
 
   // Mount filesystem and load persisted config + mapping
   if (!LittleFS.begin(true)) {
     Serial.println("[FS] Mount failed! Using compile-time defaults.");
+    setLastError("LittleFS mount failed");
   } else {
     Serial.println("[FS] Mounted.");
     loadConfig();
     loadMapping();
   }
 
-  // FastLED — register full buffer; active length controlled via numLeds
+  // FastLED — register full buffer; active length controlled via numLeds.
+  // Direct leds[] access is safe here — renderTask hasn't started yet.
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, MAX_LEDS)
          .setCorrection(TypicalLEDStrip);
   FastLED.setBrightness(MAX_BRIGHTNESS);
@@ -71,16 +74,17 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
 
-  // Wait up to 20 s — continue without WiFi if unavailable (loop() retries)
-  uint8_t dot=0;
+  // Wait up to 20 s — continue without WiFi if unavailable (loop() retries).
+  // Direct leds[] access is safe here — renderTask hasn't started yet.
+  uint8_t dot = 0;
   unsigned long wifiStart = millis();
-  while (WiFi.status()!=WL_CONNECTED && millis()-wifiStart < 20000) {
+  while (WiFi.status() != WL_CONNECTED && millis()-wifiStart < 20000) {
     leds[dot % numLeds] = CRGB::Blue; FastLED.show(); delay(300);
     leds[dot % numLeds] = CRGB::Black; dot++; Serial.print(".");
   }
   fill_solid(leds, MAX_LEDS, CRGB::Black); FastLED.show();
 
-  if (WiFi.status()==WL_CONNECTED) {
+  if (WiFi.status() == WL_CONNECTED) {
     wifiConnected = true;
     Serial.printf("\n[WiFi] IP: %s\n", WiFi.localIP().toString().c_str());
     if (MDNS.begin(HOSTNAME)) {
@@ -99,19 +103,21 @@ void setup() {
   webSocket.onEvent(onWebSocketEvent);
   Serial.println("[WS] Port 81 ready.");
 
-  // Effects task — started after mutex is initialised
-  xTaskCreatePinnedToCore(effectTask,"effects",4096,NULL,1,&effectTaskHandle,0);
+  // renderTask is the sole owner of leds[] from this point on
+  xTaskCreatePinnedToCore(renderTask, "render", 4096, NULL, 1, NULL, 0);
 
-  // Show WiFi / mapping status on first 3 LEDs
+  // Show WiFi / mapping status on first 3 LEDs (via queue)
   showSystemStatus();
   statusChanged = false;
 
-  // Ready flash (only when WiFi connected)
+  // Ready flash — enqueue green fill, wait, enqueue clear
   if (wifiConnected) {
-    ledAcquire();
-    fill_solid(leds, numLeds, CRGB::Green); FastLED.show(); delay(400);
-    fill_solid(leds, MAX_LEDS, CRGB::Black); FastLED.show();
-    ledRelease();
+    LedCommand cmd;
+    cmd.type = CMD_FILL; cmd.fill = {0, 255, 0};
+    ledEnqueue(cmd);
+    delay(400);
+    cmd.type = CMD_CLEAR;
+    ledEnqueue(cmd);
   }
 
   Serial.printf("[READY] numLeds=%d  maxLeds=%d\n", numLeds, MAX_LEDS);

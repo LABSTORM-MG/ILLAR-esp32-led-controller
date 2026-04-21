@@ -6,99 +6,212 @@
 
 // ── Global definitions ────────────────────────
 CRGB              leds[MAX_LEDS];
-SemaphoreHandle_t ledMutex      = NULL;
+QueueHandle_t     renderQueue          = NULL;
+char              lastError[64]        = "";
+int               shelfId              = SHELF_ID_DEFAULT;
+char              zone[MAX_ZONE_LEN+1] = "";
+BatchLedSet       batchBuffer[BATCH_BUFFER_SIZE];
+SemaphoreHandle_t batchMutex    = NULL;
 int               numLeds       = 30;     // overwritten from flash in loadConfig()
 volatile bool     wifiConnected = false;
 bool              statusChanged = false;
-Effect            activeEffect  = EFF_NONE;
-uint8_t           effR=255, effG=255, effB=255;
-uint16_t          effDelay      = 50;
 DeviceMode        currentMode   = MODE_IDLE;
-TaskHandle_t      effectTaskHandle = NULL;
 
-// ── Mutex wrappers ────────────────────────────
-void ledAcquire() { xSemaphoreTake(ledMutex, portMAX_DELAY); }
-void ledRelease() { xSemaphoreGive(ledMutex); }
-
-// ── LED helpers ───────────────────────────────
-int lightLocation(const char* name, uint8_t r, uint8_t g, uint8_t b) {
-  if (!locationMap.containsKey(name)) return -1;
-  JsonVariant entry = locationMap[name];
-  int count = 0;
-  if (entry.is<JsonArray>()) {
-    for (JsonVariant v : entry.as<JsonArray>()) {
-      int idx = v.as<int>();
-      if (idx >= 0 && idx < numLeds) { leds[idx] = CRGB(r,g,b); count++; }
-    }
-  } else {
-    int idx = entry.as<int>();
-    if (idx >= 0 && idx < numLeds) { leds[idx] = CRGB(r,g,b); count = 1; }
-  }
-  return count;
+// ── Queue helper ──────────────────────────────
+void setLastError(const char* msg) {
+  strncpy(lastError, msg, sizeof(lastError) - 1);
+  lastError[sizeof(lastError) - 1] = '\0';
 }
 
-void setAll(uint8_t r, uint8_t g, uint8_t b) {
-  fill_solid(leds, numLeds, CRGB(r,g,b)); FastLED.show();
-}
-
-void clearAll() {
-  fill_solid(leds, MAX_LEDS, CRGB::Black); FastLED.show();
+bool ledEnqueue(const LedCommand& cmd) {
+  return xQueueSend(renderQueue, &cmd, pdMS_TO_TICKS(100)) == pdTRUE;
 }
 
 void showSystemStatus() {
-  ledAcquire();
-  leds[0] = leds[1] = leds[2] = CRGB::Black;
-  if (!wifiConnected) {
-    leds[0] = leds[1] = leds[2] = CRGB::Red;
-  } else if (locationMap.size() == 0) {
-    leds[0] = leds[1] = leds[2] = CRGB(255, 80, 0); // orange
-  }
-  FastLED.show();
-  ledRelease();
+  LedCommand cmd; cmd.type = CMD_STATUS_UPDATE;
+  ledEnqueue(cmd);
 }
 
-// ── Effects task ──────────────────────────────
-void effectTask(void* pv) {
-  uint8_t hue=0; uint16_t pos=0; bool blinkOn=false;
+// ── Render task ───────────────────────────────
+// Sole owner of leds[] and FastLED.show().
+// Processes queued commands immediately; runs effect frames on queue timeout.
+void renderTask(void* pv) {
+  Effect   activeEffect = EFF_NONE;
+  uint8_t  effR = 255, effG = 255, effB = 255;
+  uint16_t effDelay = 50;
+  uint8_t  hue = 0;
+  uint16_t effectPos = 0;
+  bool     blinkOn = false;
+
   while (true) {
-    ledAcquire();
-    Effect   eff      = activeEffect;  // local copy while locked
-    uint16_t delay_ms = effDelay;      // local copy — used after release
-    switch (eff) {
-      case EFF_RAINBOW:
-        fill_rainbow(leds, numLeds, hue++, 7); FastLED.show();
-        ledRelease(); vTaskDelay(pdMS_TO_TICKS(delay_ms)); break;
-      case EFF_CHASE:
-        fill_solid(leds, numLeds, CRGB::Black);
-        leds[pos % numLeds] = CRGB(effR,effG,effB); FastLED.show(); pos++;
-        ledRelease(); vTaskDelay(pdMS_TO_TICKS(delay_ms)); break;
-      case EFF_BLINK:
-        blinkOn = !blinkOn;
-        if (blinkOn) fill_solid(leds, numLeds, CRGB(effR,effG,effB));
-        else         fill_solid(leds, numLeds, CRGB::Black);
-        FastLED.show();
-        ledRelease(); vTaskDelay(pdMS_TO_TICKS(delay_ms)); break;
-      default:
-        ledRelease(); vTaskDelay(pdMS_TO_TICKS(50)); break;
+    TickType_t wait = (activeEffect != EFF_NONE)
+      ? pdMS_TO_TICKS(effDelay)
+      : portMAX_DELAY;
+
+    LedCommand cmd;
+    if (xQueueReceive(renderQueue, &cmd, wait) == pdTRUE) {
+      switch (cmd.type) {
+
+        case CMD_FILL:
+          fill_solid(leds, numLeds, CRGB(cmd.fill.r, cmd.fill.g, cmd.fill.b));
+          activeEffect = EFF_NONE; currentMode = MODE_IDLE;
+          FastLED.show();
+          break;
+
+        case CMD_SET:
+          if (cmd.set.idx < (uint16_t)numLeds) {
+            leds[cmd.set.idx] = CRGB(cmd.set.r, cmd.set.g, cmd.set.b);
+            activeEffect = EFF_NONE; currentMode = MODE_IDLE;
+            FastLED.show();
+          }
+          break;
+
+        case CMD_RANGE: {
+          int from = constrain((int)cmd.range.from, 0, numLeds-1);
+          int to   = constrain((int)cmd.range.to,   0, numLeds-1);
+          CRGB col(cmd.range.r, cmd.range.g, cmd.range.b);
+          for (int i = from; i <= to; i++) leds[i] = col;
+          activeEffect = EFF_NONE; currentMode = MODE_IDLE;
+          FastLED.show();
+          break;
+        }
+
+        case CMD_BRIGHTNESS:
+          FastLED.setBrightness(cmd.brightness.value);
+          FastLED.show();
+          break;
+
+        case CMD_CLEAR:
+          fill_solid(leds, MAX_LEDS, CRGB::Black);
+          activeEffect = EFF_NONE; currentMode = MODE_IDLE;
+          FastLED.show();
+          break;
+
+        case CMD_EFFECT_START:
+          activeEffect = cmd.effect.eff;
+          effR = cmd.effect.r; effG = cmd.effect.g; effB = cmd.effect.b;
+          effDelay = cmd.effect.delay_ms ? cmd.effect.delay_ms : 50;
+          hue = 0; effectPos = 0; blinkOn = false;  // reset all effect state
+          currentMode = (activeEffect == EFF_TEST_WALK) ? MODE_DIAG : MODE_EFFECT;
+          break;
+
+        case CMD_EFFECT_STOP:
+          activeEffect = EFF_NONE; currentMode = MODE_IDLE;
+          fill_solid(leds, MAX_LEDS, CRGB::Black);
+          FastLED.show();
+          break;
+
+        case CMD_LOCATION: {
+          const Location* loc = findLocation(cmd.location.name);
+          if (loc) {
+            for (int i = 0; i < loc->count; i++) {
+              uint16_t idx = loc->indices[i];
+              if (idx < (uint16_t)numLeds)
+                leds[idx] = CRGB(cmd.location.r, cmd.location.g, cmd.location.b);
+            }
+            activeEffect = EFF_NONE; currentMode = MODE_PICK;
+            FastLED.show();
+          }
+          break;
+        }
+
+        case CMD_LOCATION_CLEAR: {
+          const Location* loc = findLocation(cmd.locationClear.name);
+          if (loc) {
+            for (int i = 0; i < loc->count; i++) {
+              uint16_t idx = loc->indices[i];
+              if (idx < (uint16_t)numLeds) leds[idx] = CRGB::Black;
+            }
+            currentMode = MODE_IDLE;
+            FastLED.show();
+          }
+          break;
+        }
+
+        case CMD_CONFIRM: {
+          const Location* loc = findLocation(cmd.confirm.name);
+          if (loc) {
+            for (int i = 0; i < loc->count; i++) {
+              uint16_t idx = loc->indices[i];
+              if (idx < (uint16_t)numLeds) leds[idx] = CRGB::Green;
+            }
+            FastLED.show();
+            vTaskDelay(pdMS_TO_TICKS(500));
+            for (int i = 0; i < loc->count; i++) {
+              uint16_t idx = loc->indices[i];
+              if (idx < (uint16_t)numLeds) leds[idx] = CRGB::Black;
+            }
+            currentMode = MODE_IDLE;
+            FastLED.show();
+          }
+          break;
+        }
+
+        case CMD_BATCH_APPLY:
+          for (int i = 0; i < cmd.batch.count; i++) {
+            uint16_t idx = batchBuffer[i].idx;
+            if (idx < (uint16_t)numLeds) leds[idx] = batchBuffer[i].color;
+          }
+          activeEffect = EFF_NONE; currentMode = cmd.batch.mode;
+          FastLED.show();
+          xSemaphoreGive(batchMutex);  // release staging buffer for next caller
+          break;
+
+        case CMD_SET_LEDS:
+          fill_solid(leds, MAX_LEDS, CRGB::Black);
+          activeEffect = EFF_NONE; currentMode = MODE_IDLE;
+          numLeds = cmd.setLeds.value;
+          FastLED.show();
+          saveConfig();
+          break;
+
+        case CMD_MODE:
+          currentMode = cmd.setMode.mode;
+          break;
+
+        case CMD_STATUS_UPDATE:
+          leds[0] = leds[1] = leds[2] = CRGB::Black;
+          if (!wifiConnected) {
+            leds[0] = leds[1] = leds[2] = CRGB::Red;
+          } else if (locationCount == 0) {
+            leds[0] = leds[1] = leds[2] = CRGB(255, 80, 0);
+          }
+          FastLED.show();
+          break;
+      }
+
+    } else {
+      // Timeout — advance one effect frame
+      switch (activeEffect) {
+        case EFF_RAINBOW:
+          fill_rainbow(leds, numLeds, hue++, 7);
+          FastLED.show();
+          break;
+        case EFF_CHASE:
+          fill_solid(leds, numLeds, CRGB::Black);
+          leds[effectPos % numLeds] = CRGB(effR, effG, effB);
+          effectPos++;
+          FastLED.show();
+          break;
+        case EFF_BLINK:
+          blinkOn = !blinkOn;
+          fill_solid(leds, numLeds, blinkOn ? CRGB(effR, effG, effB) : CRGB::Black);
+          FastLED.show();
+          break;
+        case EFF_TEST_WALK:
+          if (effectPos > 0) leds[(effectPos-1) % numLeds] = CRGB::Black;
+          leds[effectPos % numLeds] = CRGB::White;
+          FastLED.show();
+          effectPos++;
+          if ((int)effectPos > numLeds) {
+            fill_solid(leds, MAX_LEDS, CRGB::Black);
+            FastLED.show();
+            activeEffect = EFF_NONE; currentMode = MODE_IDLE;
+          }
+          break;
+        default:
+          break;
+      }
     }
   }
-}
-
-// ── Hardware test walk task ───────────────────
-// Lights each LED white one at a time. Useful for verifying wiring during installation.
-// Deletes itself when done.
-void testWalkTask(void* pv) {
-  for (int i = 0; i < numLeds; i++) {
-    ledAcquire();
-    leds[i] = CRGB::White;
-    FastLED.show();
-    ledRelease();
-    vTaskDelay(pdMS_TO_TICKS(30));
-    ledAcquire();
-    leds[i] = CRGB::Black;
-    FastLED.show();
-    ledRelease();
-  }
-  currentMode = MODE_IDLE;
-  vTaskDelete(NULL);
 }
