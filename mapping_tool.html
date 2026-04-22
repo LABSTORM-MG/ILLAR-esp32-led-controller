@@ -569,27 +569,25 @@ function renderLocList() {
   locations.forEach((loc, i) => {
     const row = document.createElement('div');
     row.className = 'loc-row' + (i === activeIdx ? ' active' : '');
+    row.dataset.i = i;
     row.innerHTML =
       '<div class="loc-swatch" style="background:' + loc.color + '"></div>' +
       '<span class="loc-name">' + esc(loc.name) + '</span>' +
       '<span class="loc-count">' + loc.indices.length + '&thinsp;LED' + (loc.indices.length !== 1 ? 's' : '') + '</span>' +
-      '<button class="loc-btn" title="Vorschau auf Gerät" data-act="prev" data-i="' + i + '">&#9654;</button>' +
-      '<button class="loc-btn del" title="Löschen" data-act="del" data-i="' + i + '">&times;</button>';
+      '<button class="loc-btn" title="Vorschau auf Gerät" data-act="prev">&#9654;</button>' +
+      '<button class="loc-btn del" title="Löschen" data-act="del">&times;</button>';
     locList.appendChild(row);
   });
-
-  locList.addEventListener('click', onLocListClick);
 }
 
 function onLocListClick(e) {
-  const btn = e.target.closest('[data-act]');
   const row = e.target.closest('.loc-row');
   if (!row) return;
-  const i = +row.querySelector('[data-i]').dataset.i;
+  const i = +row.dataset.i;
+  const btn = e.target.closest('[data-act]');
   if (btn) {
-    e.stopPropagation();
     if (btn.dataset.act === 'del') deleteLoc(i);
-    if (btn.dataset.act === 'prev') previewLoc(i);
+    else if (btn.dataset.act === 'prev') previewLoc(i);
   } else {
     selectLocRow(i);
   }
@@ -718,6 +716,7 @@ function esc(s) {
 
 // ── Init ──────────────────────────────────────────────────────
 colorInput.value = PALETTE[0];
+locList.addEventListener('click', onLocListClick);
 </script>
 </body>
 </html>
