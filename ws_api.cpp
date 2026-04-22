@@ -21,7 +21,8 @@ extern WebSocketsServer webSocket;
   {"cmd":"clear"}
 
   EFFECTS:
-  {"cmd":"effect","name":"rainbow|chase|blink|test|stop","r":255,"g":0,"b":0,"delay":50}
+  {"cmd":"effect","name":"rainbow|chase|blink|test|pulse|stop","r":255,"g":0,"b":0,"delay":20}
+  pulse extra fields: "min":30,"max":255,"speed":3
 
   LOCATION COMMANDS (requires mapping file):
   {"cmd":"location","name":"A6","r":255,"g":0,"b":0}
@@ -129,10 +130,12 @@ void onWebSocketEvent(uint8_t clientNum, WStype_t type, uint8_t* payload, size_t
       else if (strcmp(name,"chase")  ==0) eff = EFF_CHASE;
       else if (strcmp(name,"blink")  ==0) eff = EFF_BLINK;
       else if (strcmp(name,"test")   ==0) eff = EFF_TEST_WALK;
+      else if (strcmp(name,"pulse")  ==0) eff = EFF_PULSE;
       else { reply(false,"unknown effect"); return; }
       c.type = CMD_EFFECT_START;
       c.effect = { eff, (uint8_t)(doc["r"]|255), (uint8_t)(doc["g"]|255), (uint8_t)(doc["b"]|255),
-                   (uint16_t)(doc["delay"]|50) };
+                   (uint16_t)(doc["delay"]|20),
+                   (uint8_t)(doc["min"]|30), (uint8_t)(doc["max"]|255), (uint8_t)(doc["speed"]|3) };
     }
     if (!ledEnqueue(c)) { reply(false,"queue full"); return; }
     reply(true);
@@ -243,7 +246,8 @@ void onWebSocketEvent(uint8_t clientNum, WStype_t type, uint8_t* payload, size_t
   else if (strcmp(cmd,"set_leds")==0) {
     int n = doc["value"]|-1;
     if (n < 1 || n > MAX_LEDS) {
-      reply(false, String("value must be 1–" + String(MAX_LEDS)).c_str()); return;
+      char buf[48]; snprintf(buf, sizeof(buf), "value must be 1\u2013%d", MAX_LEDS);
+      reply(false, buf); return;
     }
     c.type = CMD_SET_LEDS; c.setLeds.value = n;
     if (!ledEnqueue(c)) { reply(false,"queue full"); return; }

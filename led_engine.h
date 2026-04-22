@@ -18,7 +18,7 @@ enum DeviceMode {
 };
 
 // ── Effect types ──────────────────────────────
-enum Effect : uint8_t { EFF_NONE, EFF_RAINBOW, EFF_CHASE, EFF_BLINK, EFF_TEST_WALK };
+enum Effect : uint8_t { EFF_NONE, EFF_RAINBOW, EFF_CHASE, EFF_BLINK, EFF_TEST_WALK, EFF_PULSE };
 
 // ── LED command types ─────────────────────────
 enum CmdType : uint8_t {
@@ -53,7 +53,8 @@ struct LedCommand {
     struct { uint16_t idx; uint8_t r, g, b; }                       set;
     struct { uint16_t from, to; uint8_t r, g, b; }                  range;
     struct { uint8_t value; }                                        brightness;
-    struct { Effect eff; uint8_t r, g, b; uint16_t delay_ms; }      effect;
+    struct { Effect eff; uint8_t r, g, b; uint16_t delay_ms;
+             uint8_t pulseMin, pulseMax, pulseSpeed; }               effect;
     struct { char name[MAX_LOCATION_NAME_LEN+1]; uint8_t r, g, b; } location;
     struct { char name[MAX_LOCATION_NAME_LEN+1]; }                  locationClear;
     struct { char name[MAX_LOCATION_NAME_LEN+1]; }                  confirm;

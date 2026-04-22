@@ -70,8 +70,8 @@ void handleUpload() {
   DynamicJsonDocument test(8192);
   DeserializationError err = deserializeJson(test, body);
   if (err) {
-    httpServer.send(400,"application/json",
-      String("{\"error\":\"invalid JSON: ")+err.c_str()+"\"}"); return;
+    char buf[96]; snprintf(buf, sizeof(buf), "{\"error\":\"invalid JSON: %s\"}", err.c_str());
+    httpServer.send(400,"application/json",buf); return;
   }
   if (!test.is<JsonObject>()) {
     httpServer.send(400,"application/json",
@@ -79,28 +79,28 @@ void handleUpload() {
   }
   JsonObject obj = test.as<JsonObject>();
   if ((int)obj.size() > MAX_MAPPING_LOCATIONS) {
-    httpServer.send(400,"application/json",
-      String("{\"error\":\"too many locations, max ")+MAX_MAPPING_LOCATIONS+"\"}"); return;
+    char buf[64]; snprintf(buf, sizeof(buf), "{\"error\":\"too many locations, max %d\"}", MAX_MAPPING_LOCATIONS);
+    httpServer.send(400,"application/json",buf); return;
   }
   for (JsonPair kv : obj) {
     if (strlen(kv.key().c_str()) > MAX_LOCATION_NAME_LEN) {
-      httpServer.send(400,"application/json",
-        String("{\"error\":\"location name too long: '")+kv.key().c_str()+"'\"}"); return;
+      char buf[80]; snprintf(buf, sizeof(buf), "{\"error\":\"location name too long: '%s'\"}", kv.key().c_str());
+      httpServer.send(400,"application/json",buf); return;
     }
     JsonVariant v = kv.value();
     if (v.is<int>()) {
       int idx = v.as<int>();
       if (idx < 0 || idx >= MAX_LEDS) {
-        httpServer.send(400,"application/json",
-          String("{\"error\":\"index out of range for '")+kv.key().c_str()+"'\"}"); return;
+        char buf[80]; snprintf(buf, sizeof(buf), "{\"error\":\"index out of range for '%s'\"}", kv.key().c_str());
+        httpServer.send(400,"application/json",buf); return;
       }
       continue;
     }
     if (v.is<JsonArray>()) {
       JsonArray arr = v.as<JsonArray>();
       if (arr.size() == 0) {
-        httpServer.send(400,"application/json",
-          String("{\"error\":\"empty array for '")+kv.key().c_str()+"'\"}"); return;
+        char buf[80]; snprintf(buf, sizeof(buf), "{\"error\":\"empty array for '%s'\"}", kv.key().c_str());
+        httpServer.send(400,"application/json",buf); return;
       }
       bool valid = true;
       for (JsonVariant elem : arr) {
@@ -109,11 +109,11 @@ void handleUpload() {
         if (idx < 0 || idx >= MAX_LEDS) { valid = false; break; }
       }
       if (valid) continue;
-      httpServer.send(400,"application/json",
-        String("{\"error\":\"invalid index in array for '")+kv.key().c_str()+"'\"}"); return;
+      char buf[80]; snprintf(buf, sizeof(buf), "{\"error\":\"invalid index in array for '%s'\"}", kv.key().c_str());
+      httpServer.send(400,"application/json",buf); return;
     }
-    httpServer.send(400,"application/json",
-      String("{\"error\":\"invalid value for '")+kv.key().c_str()+"': must be int or int[]\"}");
+    char buf[96]; snprintf(buf, sizeof(buf), "{\"error\":\"invalid value for '%s': must be int or int[]\"}", kv.key().c_str());
+    httpServer.send(400,"application/json",buf);
     return;
   }
 
@@ -126,8 +126,8 @@ void handleUpload() {
   }
   loadMapping();
   statusChanged = true;
-  httpServer.send(200,"application/json",
-    String("{\"ok\":true,\"locations\":")+((int)locationCount)+"}");
+  char okbuf[48]; snprintf(okbuf, sizeof(okbuf), "{\"ok\":true,\"locations\":%d}", (int)locationCount);
+  httpServer.send(200,"application/json",okbuf);
 }
 
 // DELETE /mapping
@@ -155,8 +155,8 @@ void handleSetConfig() {
   if (doc.containsKey("num_leds")) {
     int n = doc["num_leds"];
     if (n < 1 || n > MAX_LEDS) {
-      httpServer.send(400,"application/json",
-        String("{\"error\":\"num_leds must be 1–") + MAX_LEDS + "\"}"); return;
+      char buf[64]; snprintf(buf, sizeof(buf), "{\"error\":\"num_leds must be 1\\u2013%d\"}", MAX_LEDS);
+      httpServer.send(400,"application/json",buf); return;
     }
     LedCommand cmd; cmd.type = CMD_SET_LEDS; cmd.setLeds.value = n;
     if (!ledEnqueue(cmd)) {
@@ -176,8 +176,8 @@ void handleSetConfig() {
   if (doc.containsKey("zone")) {
     const char* z = doc["zone"];
     if (strlen(z) > MAX_ZONE_LEN) {
-      httpServer.send(400,"application/json",
-        String("{\"error\":\"zone too long, max ")+MAX_ZONE_LEN+"}\"}"); return;
+      char buf[64]; snprintf(buf, sizeof(buf), "{\"error\":\"zone too long, max %d\"}", MAX_ZONE_LEN);
+      httpServer.send(400,"application/json",buf); return;
     }
     strncpy(zone, z, MAX_ZONE_LEN); zone[MAX_ZONE_LEN] = '\0'; changed = true;
   }

@@ -42,6 +42,7 @@ void renderTask(void* pv) {
   uint8_t  hue = 0;
   uint16_t effectPos = 0;
   bool     blinkOn = false;
+  uint8_t  pulseMin = 30, pulseMax = 255, pulseSpeed = 3, pulsePhase = 0;
 
   while (true) {
     TickType_t wait = (activeEffect != EFF_NONE)
@@ -91,7 +92,10 @@ void renderTask(void* pv) {
           activeEffect = cmd.effect.eff;
           effR = cmd.effect.r; effG = cmd.effect.g; effB = cmd.effect.b;
           effDelay = cmd.effect.delay_ms ? cmd.effect.delay_ms : 50;
-          hue = 0; effectPos = 0; blinkOn = false;  // reset all effect state
+          pulseMin   = cmd.effect.pulseMin   ? cmd.effect.pulseMin   : 30;
+          pulseMax   = cmd.effect.pulseMax   ? cmd.effect.pulseMax   : 255;
+          pulseSpeed = cmd.effect.pulseSpeed ? cmd.effect.pulseSpeed : 3;
+          hue = 0; effectPos = 0; blinkOn = false; pulsePhase = 0;
           currentMode = (activeEffect == EFF_TEST_WALK) ? MODE_DIAG : MODE_EFFECT;
           break;
 
@@ -198,6 +202,14 @@ void renderTask(void* pv) {
           fill_solid(leds, numLeds, blinkOn ? CRGB(effR, effG, effB) : CRGB::Black);
           FastLED.show();
           break;
+        case EFF_PULSE: {
+          uint8_t bright = pulseMin + scale8(sin8(pulsePhase), pulseMax - pulseMin);
+          fill_solid(leds, numLeds,
+            CRGB(scale8(effR, bright), scale8(effG, bright), scale8(effB, bright)));
+          FastLED.show();
+          pulsePhase += pulseSpeed;
+          break;
+        }
         case EFF_TEST_WALK:
           if (effectPos > 0) leds[(effectPos-1) % numLeds] = CRGB::Black;
           leds[effectPos % numLeds] = CRGB::White;

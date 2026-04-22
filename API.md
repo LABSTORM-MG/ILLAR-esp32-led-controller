@@ -160,6 +160,7 @@ This is a device-level dimmer applied uniformly to all LEDs by FastLED. It is in
 { "cmd": "effect", "name": "rainbow", "delay": 20 }
 { "cmd": "effect", "name": "chase", "r": 255, "g": 128, "b": 0, "delay": 60 }
 { "cmd": "effect", "name": "blink", "r": 0, "g": 0, "b": 255, "delay": 400 }
+{ "cmd": "effect", "name": "pulse", "r": 255, "g": 150, "b": 0, "min": 30, "max": 255, "speed": 3, "delay": 20 }
 { "cmd": "effect", "name": "test", "delay": 30 }
 { "cmd": "effect", "name": "stop" }
 ```
@@ -167,13 +168,18 @@ This is a device-level dimmer applied uniformly to all LEDs by FastLED. It is in
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `cmd` | string | yes | `"effect"` |
-| `name` | string | yes | `"rainbow"`, `"chase"`, `"blink"`, `"test"`, or `"stop"` |
+| `name` | string | yes | `"rainbow"`, `"chase"`, `"blink"`, `"pulse"`, `"test"`, or `"stop"` |
 | `r` | integer | no | Red (ignored for `rainbow`, `test`, and `stop`) |
 | `g` | integer | no | Green (ignored for `rainbow`, `test`, and `stop`) |
 | `b` | integer | no | Blue (ignored for `rainbow`, `test`, and `stop`) |
-| `delay` | integer | no | Frame delay in ms, default 50 |
+| `delay` | integer | no | Frame delay in ms, default 20 |
+| `min` | integer | no | `pulse` only — minimum brightness 0–255, default 30 |
+| `max` | integer | no | `pulse` only — maximum brightness 0–255, default 255 |
+| `speed` | integer | no | `pulse` only — phase increment per frame 1–255, default 3 |
 
 Effects run inside `renderTask` — the WebSocket stays responsive while an animation is playing. Sending `"stop"` clears all LEDs.
+
+`"pulse"` smoothly fades the strip between `min` and `max` brightness using a sine wave. Color is set via `r`/`g`/`b`. Brightness scaling is done in RGB space (no `FastLED.setBrightness()` side effects).
 
 `"test"` lights each LED white one at a time (hardware walk test). Completes automatically and returns to idle.
 
@@ -289,7 +295,7 @@ Sets all LEDs associated with that location to black (off). Returns `"location n
 | `multi` | Several individual LEDs in one shot |
 | `brightness` | Global brightness multiplier |
 | `clear` | All LEDs off |
-| `effect` | Built-in animation (rainbow / chase / blink / stop) |
+| `effect` | Built-in animation (rainbow / chase / blink / pulse / test / stop) |
 | `location` | Light a named location from the mapping |
 | `locations` | Light multiple named locations in one message |
 | `confirm` | Green flash on location for 500 ms, then off (withdrawal confirmed) |
