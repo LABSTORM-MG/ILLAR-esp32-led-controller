@@ -203,8 +203,17 @@ void renderTask(void* pv) {
           FastLED.show();
           break;
         case EFF_CHASE:
+          // Same relative dot position in every active tier, so all tiers
+          // chase in sync instead of one dot travelling tier-by-tier
+          // through the flat buffer.
           fill_solid(leds, numLeds, CRGB::Black);
-          leds[effectPos % numLeds] = CRGB(effR, effG, effB);
+          for (int t = 0; t < NUM_TIERS; t++) {
+            int tierStart  = t * MAX_LEDS_PER_TIER;
+            int tierActive = numLeds - tierStart;
+            if (tierActive <= 0) break;
+            if (tierActive > MAX_LEDS_PER_TIER) tierActive = MAX_LEDS_PER_TIER;
+            leds[tierStart + (effectPos % tierActive)] = CRGB(effR, effG, effB);
+          }
           effectPos++;
           FastLED.show();
           break;
