@@ -188,7 +188,18 @@ void renderTask(void* pv) {
       // Timeout — advance one effect frame
       switch (activeEffect) {
         case EFF_RAINBOW:
-          fill_rainbow(leds, numLeds, hue++, 7);
+          // Paint the same rainbow onto each tier's block individually —
+          // a single fill_rainbow() across the flat buffer would instead
+          // spread one continuous rainbow across all tiers, so each tier
+          // shows a different slice of the color wheel instead of matching.
+          for (int t = 0; t < NUM_TIERS; t++) {
+            int tierStart  = t * MAX_LEDS_PER_TIER;
+            int tierActive = numLeds - tierStart;
+            if (tierActive <= 0) break;
+            if (tierActive > MAX_LEDS_PER_TIER) tierActive = MAX_LEDS_PER_TIER;
+            fill_rainbow(leds + tierStart, tierActive, hue, 7);
+          }
+          hue++;
           FastLED.show();
           break;
         case EFF_CHASE:
