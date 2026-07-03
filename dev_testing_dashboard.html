@@ -428,6 +428,9 @@
     <p style="font-size:12px;color:var(--text2);margin-bottom:12px;">
       Set the number of active LEDs on the selected node. Saved to flash — survives reboot. The firmware must be compiled with <code>MAX_LEDS</code> ≥ this value.
     </p>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px;">
+      Wiring note: each shelf now runs 5 tiers ("Etagen"), each on its own data pin and its own 5V feed (see <code>config.h</code> <code>LED_PIN_TIER_1</code>…<code>_5</code>), instead of one long daisy-chained strip. This count is still one flat index across all 5 tiers (0…<code>max_leds</code>-1) — the tier split is wiring-only, not visible in the index space.
+    </p>
     <div class="row" style="align-items:flex-end;">
       <div class="field">
         <label>Current (from device)</label>

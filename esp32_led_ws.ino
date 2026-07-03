@@ -1,7 +1,7 @@
 /*
  * ILLAR ESP32-C6 LED Node
  * ========================
- * Edit config.h to set WiFi credentials, hostname, and LED pin before flashing.
+ * Edit config.h to set WiFi credentials, hostname, and LED tier pins before flashing.
  *
  * Libraries required (Arduino Library Manager):
  *   - FastLED           (by Daniel Garcia)
@@ -52,10 +52,15 @@ void setup() {
     loadMapping();
   }
 
-  // FastLED — register full buffer; active length controlled via numLeds.
+  // FastLED — one controller per shelf tier, each on its own pin, each
+  // covering a fixed MAX_LEDS_PER_TIER slice of the shared leds[] buffer.
+  // Active length across the whole buffer is controlled via numLeds.
   // Direct leds[] access is safe here — renderTask hasn't started yet.
-  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, MAX_LEDS)
-         .setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_1, COLOR_ORDER>(leds + 0*MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_2, COLOR_ORDER>(leds + 1*MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_3, COLOR_ORDER>(leds + 2*MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_4, COLOR_ORDER>(leds + 3*MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_5, COLOR_ORDER>(leds + 4*MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
   FastLED.setBrightness(MAX_BRIGHTNESS);
   fill_solid(leds, MAX_LEDS, CRGB::Black);
   FastLED.show();
