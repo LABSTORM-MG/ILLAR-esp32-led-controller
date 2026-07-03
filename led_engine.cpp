@@ -12,7 +12,7 @@ int               shelfId              = SHELF_ID_DEFAULT;
 char              zone[MAX_ZONE_LEN+1] = "";
 BatchLedSet       batchBuffer[BATCH_BUFFER_SIZE];
 SemaphoreHandle_t batchMutex    = NULL;
-int               numLeds       = 30;     // overwritten from flash in loadConfig()
+int               numLeds       = MAX_LEDS; // overwritten from flash in loadConfig()
 volatile bool     wifiConnected = false;
 bool              statusChanged = false;
 DeviceMode        currentMode   = MODE_IDLE;

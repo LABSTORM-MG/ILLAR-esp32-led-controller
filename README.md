@@ -31,7 +31,7 @@ Each shelf tier ("Etage") gets its own data pin and its own 5V injection point �
 | 5V (per tier) | 5V from PSU, fed separately to each tier | — |
 | GND | GND | — |
 
-Pin numbers are defined in `config.h` — verify them against your actual wiring/board before flashing, and avoid strapping pins where possible. Note that GPIO 12/13 are the ESP32-C6's native USB D-/D+ lines and are unusable as LED outputs (FastLED refuses to compile against them). Max LEDs per tier is `MAX_LEDS_PER_TIER` (default 100; total addressable buffer is `NUM_TIERS × MAX_LEDS_PER_TIER`).
+Pin numbers are defined in `config.h` — verify them against your actual wiring/board before flashing, and avoid strapping pins where possible. Note that GPIO 12/13 are the ESP32-C6's native USB D-/D+ lines and are unusable as LED outputs (FastLED refuses to compile against them). Max LEDs per tier is `MAX_LEDS_PER_TIER` (default 16, sized for the 5–12 LEDs actually wired per tier; total addressable buffer is `NUM_TIERS × MAX_LEDS_PER_TIER`). Bump it in `config.h` and reflash if a tier ever needs more.
 
 ## Dev Tools
 

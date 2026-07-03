@@ -29,7 +29,10 @@
 // Maximum number of LEDs per physical tier strip — uses 3 bytes of RAM per LED.
 // Total addressable buffer is NUM_TIERS * MAX_LEDS_PER_TIER; the active count
 // within that (numLeds) is loaded from flash at boot (set via HTTP or WS).
-#define MAX_LEDS_PER_TIER  100
+// Actual wired tiers carry 5-12 LEDs each — 16 leaves headroom without
+// wasting buffer space or forcing num_leds up near a tier's block boundary
+// just to reach the next pin.
+#define MAX_LEDS_PER_TIER  16
 #define MAX_LEDS           (NUM_TIERS * MAX_LEDS_PER_TIER)
 
 #define CONFIG_FILE   "/config.json"

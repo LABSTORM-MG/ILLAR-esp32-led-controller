@@ -335,7 +335,7 @@ Changes how many LEDs the device drives. Saves to flash immediately — survives
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `cmd` | string | yes | `"set_leds"` |
-| `value` | integer | yes | New LED count, 1 – `MAX_LEDS` (compile-time ceiling, default 500) |
+| `value` | integer | yes | New LED count, 1 – `MAX_LEDS` (compile-time ceiling, default 80) |
 
 **Success response includes the confirmed count:**
 ```json
@@ -354,7 +354,7 @@ Changes how many LEDs the device drives. Saves to flash immediately — survives
 
 **Response:**
 ```json
-{ "status": "ok", "cmd": "get_config", "num_leds": 60, "max_leds": 500 }
+{ "status": "ok", "cmd": "get_config", "num_leds": 60, "max_leds": 80 }
 ```
 
 | Field | Description |
@@ -396,7 +396,7 @@ Returns device metadata.
   "shelf_id":   1,
   "ip":         "192.168.1.42",
   "num_leds":   60,
-  "max_leds":   500,
+  "max_leds":   80,
   "locations":  12,
   "mapping_ok": true,
   "mode":       "idle"
@@ -422,7 +422,7 @@ Extended operational diagnostics for debugging and middleware integration.
   "wifi_rssi":    -62,
   "ip":           "192.168.1.42",
   "num_leds":     60,
-  "max_leds":     500,
+  "max_leds":     80,
   "mapping_locs": 12,
   "mode":         "pick",
   "last_error":   null
@@ -450,7 +450,7 @@ Equivalent to `{"cmd":"effect","name":"test"}` over WebSocket.
 Returns the current runtime configuration.
 
 ```json
-{ "num_leds": 60, "max_leds": 500, "shelf_id": 2, "zone": "Regal A" }
+{ "num_leds": 60, "max_leds": 80, "shelf_id": 2, "zone": "Regal A" }
 ```
 
 `zone` is an empty string if not set.
@@ -486,7 +486,7 @@ Content-Type: application/json
 ```json
 { "error": "invalid JSON" }                   // 400
 { "error": "no recognised fields" }           // 400 — body has no known keys
-{ "error": "num_leds must be 1–500" }         // 400
+{ "error": "num_leds must be 1–80" }          // 400
 { "error": "shelf_id must be 0–255" }         // 400
 { "error": "zone too long, max 31" }          // 400
 { "error": "render queue full" }              // 503 — transient, retry
@@ -675,7 +675,7 @@ wscat -c ws://led-node-1.local:81
 < {"status":"ok","cmd":"set_leds","num_leds":60}
 
 > {"cmd":"get_config"}
-< {"status":"ok","cmd":"get_config","num_leds":60,"max_leds":500}
+< {"status":"ok","cmd":"get_config","num_leds":60,"max_leds":80}
 ```
 
 ### Set LED count via HTTP (Python)
@@ -685,7 +685,7 @@ import requests
 
 # Read current config
 r = requests.get("http://led-node-1.local:80/config")
-print(r.json())  # {"num_leds": 30, "max_leds": 500}
+print(r.json())  # {"num_leds": 80, "max_leds": 80}
 
 # Change to 60 LEDs
 r = requests.post(
@@ -710,7 +710,7 @@ print(r.json())  # {"ok": True, "num_leds": 60}
 | `"unknown effect"` | `effect.name` is not `rainbow`, `chase`, `blink`, or `stop` |
 | `"location not found"` | Location name not in the current mapping |
 | `"missing 'items'"` | `locations` command missing `items` array |
-| `"value must be 1–500"` | `set_leds` value out of range (upper bound = `MAX_LEDS`) |
+| `"value must be 1–80"` | `set_leds` value out of range (upper bound = `MAX_LEDS`) |
 
 ---
 
@@ -731,8 +731,9 @@ print(r.json())  # {"ok": True, "num_leds": 60}
 | Constant | Default | Description |
 |----------|---------|-------------|
 | `HOSTNAME` | `led-node-1` | mDNS hostname — change to `led-node-2`, `led-node-3` (compile-time only) |
-| `LED_PIN` | `8` | GPIO data pin |
-| `MAX_LEDS` | `500` | Hard ceiling for LED count; allocates RAM (`3 × MAX_LEDS` bytes) |
+| `LED_PIN_TIER_1`…`_5` | `8, 9, 10, 11, 18` | GPIO data pin per shelf tier |
+| `MAX_LEDS_PER_TIER` | `16` | Per-tier buffer slots (actual tiers carry 5–12 LEDs each) |
+| `MAX_LEDS` | `80` | Hard ceiling for LED count (`NUM_TIERS × MAX_LEDS_PER_TIER`); allocates RAM (`3 × MAX_LEDS` bytes) |
 | `LED_TYPE` | `WS2812B` | LED chipset |
 | `COLOR_ORDER` | `GRB` | Colour byte order |
 | `MAX_BRIGHTNESS` | `255` | Power-on brightness |
