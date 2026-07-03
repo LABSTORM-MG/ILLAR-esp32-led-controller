@@ -2,6 +2,8 @@
 
 ESP32-C6 firmware for WS2812B LED shelf guidance, part of the ILLAR warehouse system.
 
+Used as the `led-controller` git submodule of the main [storage-room](https://github.com/dejhfm/storage-room) repo, which also covers the frontend, InvenTree backend, and system-wide architecture.
+
 ## Setup
 
 1. Open `esp32_led_ws.ino` in the Arduino IDE (the sketch folder must be named `esp32_led_ws`).
@@ -25,11 +27,11 @@ Each shelf tier ("Etage") gets its own data pin and its own 5V injection point �
 | Tier 2 data | GPIO 9  | `LED_PIN_TIER_2` |
 | Tier 3 data | GPIO 10 | `LED_PIN_TIER_3` |
 | Tier 4 data | GPIO 11 | `LED_PIN_TIER_4` |
-| Tier 5 data | GPIO 12 | `LED_PIN_TIER_5` |
+| Tier 5 data | GPIO 18 | `LED_PIN_TIER_5` |
 | 5V (per tier) | 5V from PSU, fed separately to each tier | — |
 | GND | GND | — |
 
-Pin numbers are defined in `config.h` — verify them against your actual wiring/board before flashing, and avoid strapping pins where possible. Max LEDs per tier is `MAX_LEDS_PER_TIER` (default 100; total addressable buffer is `NUM_TIERS × MAX_LEDS_PER_TIER`).
+Pin numbers are defined in `config.h` — verify them against your actual wiring/board before flashing, and avoid strapping pins where possible. Note that GPIO 12/13 are the ESP32-C6's native USB D-/D+ lines and are unusable as LED outputs (FastLED refuses to compile against them). Max LEDs per tier is `MAX_LEDS_PER_TIER` (default 100; total addressable buffer is `NUM_TIERS × MAX_LEDS_PER_TIER`).
 
 ## Dev Tools
 

@@ -13,13 +13,14 @@
 // run fed with its own 5V injection point, instead of one long daisy-chained
 // strip — avoids voltage-drop dimming/yellowing at the far end of the shelf.
 // Verify pin numbers against your ESP32-C6 Dev Module before flashing —
-// avoid strapping pins where your wiring allows.
+// avoid strapping pins where your wiring allows. GPIO12/13 are the C6's
+// native USB D-/D+ lines and cannot be used as LED outputs.
 #define NUM_TIERS       5
 #define LED_PIN_TIER_1  8
 #define LED_PIN_TIER_2  9
 #define LED_PIN_TIER_3  10
 #define LED_PIN_TIER_4  11
-#define LED_PIN_TIER_5  12
+#define LED_PIN_TIER_5  18
 
 #define LED_TYPE       WS2812B
 #define COLOR_ORDER    GRB
