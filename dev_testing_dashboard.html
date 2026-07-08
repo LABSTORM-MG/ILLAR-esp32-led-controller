@@ -273,6 +273,7 @@
   <div class="tab active" data-tab="colour">Colour</div>
   <div class="tab" data-tab="effects">Effects</div>
   <div class="tab" data-tab="location">Locations</div>
+  <div class="tab" data-tab="setup">Setup</div>
   <div class="tab" data-tab="address">Address</div>
   <div class="tab" data-tab="raw">Raw JSON</div>
   <div class="tab" data-tab="middleware">Middleware</div>
@@ -417,6 +418,52 @@
         <tbody id="mapping-tbody"></tbody>
       </table>
     </div>
+  </div>
+
+</div>
+
+<!-- SETUP TAB -->
+<div class="tab-panel" id="tab-setup">
+
+  <div class="section">
+    <h2>Load layout from device</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px;">
+      Fetches tier layout (<code>/config</code>) and current mapping (<code>/mapping</code>) from the selected node.
+    </p>
+    <div class="row">
+      <button class="primary" onclick="setupLoadFromDevice()">Load from device</button>
+      <span id="setup-layout-info" style="font-size:12px;color:var(--text3);"></span>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Walk LEDs</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px;">
+      Select a LED by tier + position, or directly by flat index. The selected LED lights up alone — everything else turns off.
+    </p>
+    <div class="row" style="align-items:flex-end;">
+      <div class="field"><label>Tier</label><select id="setup-tier" onchange="setupOnTierPosChange()"></select></div>
+      <div class="field"><label>Position in tier</label><input type="number" id="setup-pos" min="1" value="1" onchange="setupOnTierPosChange()" style="width:110px;"></div>
+      <span style="color:var(--text3);padding-bottom:8px;">or</span>
+      <div class="field"><label>Flat index</label><input type="number" id="setup-index" min="0" value="0" onchange="setupOnIndexChange()" style="width:90px;"></div>
+      <div class="field"><label>Colour</label><input type="color" id="setup-color" value="#ffffff" onchange="setupLightCurrent()"></div>
+    </div>
+    <div class="row">
+      <button onclick="setupPrev()">◀ Previous</button>
+      <button onclick="setupNext()">Next ▶</button>
+      <button onclick="setupLightCurrent()">Re-light</button>
+    </div>
+    <div id="setup-active-warning" style="display:none;font-size:12px;color:var(--warn);background:var(--warn-bg);border-radius:var(--radius-sm);padding:8px 10px;margin-top:6px;"></div>
+    <div id="setup-current-label" style="font-size:13px;margin-top:10px;color:var(--text3);">Load from device first.</div>
+  </div>
+
+  <div class="section">
+    <h2>Assign label</h2>
+    <div class="row">
+      <div class="field" style="flex:1"><label>Label</label><input type="text" id="setup-label-name" placeholder="A2" style="width:100%"></div>
+      <button class="primary" onclick="assignSetupLabel()">Assign &amp; save</button>
+    </div>
+    <div id="setup-status" style="font-size:12px;margin-top:8px;"></div>
   </div>
 
 </div>
@@ -977,6 +1024,153 @@ function quickLight(name) {
   send({ cmd: "location", name, ...c, brightness: bright });
 }
 
+// ── Setup mode (walk LEDs one at a time, assign labels) ──
+let setupNumTiers   = 5;
+let setupLedsPerTier = 9;
+let setupMaxLeds    = setupNumTiers * setupLedsPerTier;
+let setupActiveLeds = setupMaxLeds;
+let setupMapping    = {};   // name -> index or [indices], mirrors device /mapping
+let setupIndex      = 0;
+
+function setupStatus(msg, ok = null) {
+  const el = document.getElementById("setup-status");
+  el.textContent = msg;
+  el.style.color = ok === true ? "var(--success)" : ok === false ? "var(--danger)" : "var(--text3)";
+}
+
+function setupIndexFromTierPos(tier, pos) {
+  return (tier - 1) * setupLedsPerTier + (pos - 1);
+}
+function setupTierPosFromIndex(idx) {
+  return { tier: Math.floor(idx / setupLedsPerTier) + 1, pos: (idx % setupLedsPerTier) + 1 };
+}
+
+function populateSetupTierSelect() {
+  const sel = document.getElementById("setup-tier");
+  sel.innerHTML = "";
+  for (let t = 1; t <= setupNumTiers; t++) {
+    const opt = document.createElement("option");
+    opt.value = t; opt.textContent = "Tier " + t;
+    sel.appendChild(opt);
+  }
+}
+
+async function setupLoadFromDevice() {
+  const base = getHttpBase();
+  if (!base) { setupStatus("Select a node first.", false); return; }
+  setupStatus("Loading…");
+  try {
+    const cfgRes = await fetch(`${base}/config`);
+    const cfg = await cfgRes.json();
+    setupNumTiers    = cfg.num_tiers ?? setupNumTiers;
+    setupLedsPerTier = cfg.leds_per_tier ?? setupLedsPerTier;
+    setupMaxLeds     = cfg.max_leds ?? (setupNumTiers * setupLedsPerTier);
+    setupActiveLeds  = cfg.num_leds ?? setupMaxLeds;
+
+    const mapRes = await fetch(`${base}/mapping`);
+    setupMapping = mapRes.status === 404 ? {} : await mapRes.json();
+
+    populateSetupTierSelect();
+    document.getElementById("setup-layout-info").textContent =
+      `${setupNumTiers} tiers × ${setupLedsPerTier} LEDs/tier — ${setupActiveLeds}/${setupMaxLeds} active, ${Object.keys(setupMapping).length} label(s)`;
+    setupGotoIndex(0);
+    setupStatus(`Loaded from ${nodes[selectedIdx].name}.`, true);
+    log(`Setup: loaded layout (${setupNumTiers}×${setupLedsPerTier}) and ${Object.keys(setupMapping).length} label(s) from ${nodes[selectedIdx].name}`, "log-in");
+  } catch(e) {
+    setupStatus("Load failed: " + e.message, false);
+  }
+}
+
+function setupGotoIndex(idx) {
+  setupIndex = Math.max(0, Math.min(setupMaxLeds - 1, idx));
+  const { tier, pos } = setupTierPosFromIndex(setupIndex);
+  document.getElementById("setup-tier").value  = tier;
+  document.getElementById("setup-pos").value   = pos;
+  document.getElementById("setup-index").value = setupIndex;
+
+  const warn = document.getElementById("setup-active-warning");
+  if (setupIndex >= setupActiveLeds) {
+    warn.style.display = "block";
+    warn.textContent = `Index ${setupIndex} is beyond the device's active LED count (${setupActiveLeds}) — it won't light up until "LED count" is raised in the Address tab.`;
+  } else {
+    warn.style.display = "none";
+  }
+
+  setupRenderCurrentLabel();
+  setupLightCurrent();
+}
+
+function setupOnTierPosChange() {
+  const tier = parseInt(document.getElementById("setup-tier").value) || 1;
+  const pos  = parseInt(document.getElementById("setup-pos").value) || 1;
+  setupGotoIndex(setupIndexFromTierPos(tier, pos));
+}
+function setupOnIndexChange() {
+  setupGotoIndex(parseInt(document.getElementById("setup-index").value) || 0);
+}
+function setupPrev() { setupGotoIndex(setupIndex - 1); }
+function setupNext() { setupGotoIndex(setupIndex + 1); }
+
+function setupLightCurrent() {
+  const c = hexToRgb(document.getElementById("setup-color").value);
+  send({ cmd: "clear" });
+  send({ cmd: "set", index: setupIndex, ...c });
+}
+
+function setupFindLabel(idx) {
+  for (const [name, val] of Object.entries(setupMapping)) {
+    if (Array.isArray(val) ? val.includes(idx) : val === idx) return name;
+  }
+  return null;
+}
+
+function setupRenderCurrentLabel() {
+  const name = setupFindLabel(setupIndex);
+  const el = document.getElementById("setup-current-label");
+  el.textContent = name ? `Currently labelled: "${name}"` : "No label assigned yet.";
+  el.style.color = name ? "var(--accent)" : "var(--text3)";
+  document.getElementById("setup-label-name").value = name || "";
+}
+
+async function assignSetupLabel() {
+  const base = getHttpBase();
+  if (!base) { setupStatus("Select a node first.", false); return; }
+  const name = document.getElementById("setup-label-name").value.trim();
+  if (!name) { setupStatus("Enter a label name.", false); return; }
+
+  // One label per LED: strip this index out of every other entry first.
+  for (const key of Object.keys(setupMapping)) {
+    const val = setupMapping[key];
+    if (Array.isArray(val)) {
+      const filtered = val.filter(i => i !== setupIndex);
+      if (filtered.length === 0) delete setupMapping[key];
+      else setupMapping[key] = filtered.length === 1 ? filtered[0] : filtered;
+    } else if (val === setupIndex && key !== name) {
+      delete setupMapping[key];
+    }
+  }
+  setupMapping[name] = setupIndex;
+
+  setupStatus("Saving…");
+  try {
+    const res = await fetch(`${base}/mapping`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(setupMapping)
+    });
+    const data = await res.json();
+    if (data.ok) {
+      setupStatus(`"${name}" → LED ${setupIndex} saved (${data.locations} label(s) total).`, true);
+      log(`Setup: "${name}" → index ${setupIndex} on ${nodes[selectedIdx].name}`, "log-in");
+      setupRenderCurrentLabel();
+    } else {
+      setupStatus("Error: " + (data.error || "unknown"), false);
+    }
+  } catch(e) {
+    setupStatus("Save failed: " + e.message, false);
+  }
+}
+
 // ── LED count ────────────────────────────────
 function setNumLedsStatus(msg, ok = null) {
   const el = document.getElementById("num-leds-status");
@@ -1105,6 +1299,7 @@ function mwApplyTemplate(v) {
 
 renderMwStatus();
 renderNodes();
+populateSetupTierSelect();
 log("Dashboard ready. Select a node and click Connect.", "log-sys");
 </script>
 </body>

@@ -200,11 +200,13 @@ void handleSetConfig() {
 // GET /config
 void handleGetConfig() {
   addCors();
-  StaticJsonDocument<192> doc;
-  doc["num_leds"] = numLeds;
-  doc["max_leds"] = MAX_LEDS;
-  doc["shelf_id"] = shelfId;
-  doc["zone"]     = zone[0] ? zone : "";
+  StaticJsonDocument<256> doc;
+  doc["num_leds"]      = numLeds;
+  doc["max_leds"]      = MAX_LEDS;
+  doc["num_tiers"]     = NUM_TIERS;
+  doc["leds_per_tier"] = MAX_LEDS_PER_TIER;
+  doc["shelf_id"]      = shelfId;
+  doc["zone"]          = zone[0] ? zone : "";
   String out; serializeJson(doc, out);
   httpServer.send(200, "application/json", out);
 }
