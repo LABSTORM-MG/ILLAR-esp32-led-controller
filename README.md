@@ -45,9 +45,13 @@ See **[API.md](API.md)** for the full reference.
 
 Each flashed device exposes:
 - **HTTP REST** on port `80` — configure LED count, upload location mapping
-- **WebSocket** on port `81` — real-time LED control
+- **WebSocket** on port `81` — real-time LED control (local dev tools: `dev_testing_dashboard.html`, `mapping_tool.html`)
 
 Devices are reachable by mDNS hostname (e.g. `led-node-1.local`) or IP address.
+
+In addition, each device dials **out** as a WebSocket client to the Java middleware (`Lagerverwaltung`, `/ws/storage`) — set `MW_HOST`/`MW_PORT` in `config.h` before flashing. This is the production path the middleware uses to trigger LEDs; the port-81 server above stays available in parallel for local testing. See [API.md](API.md#middleware-client-tilde-protocol) for the command set.
+
+To test this path without real hardware for the RFID/frontend side, `dev_testing_dashboard.html` has a **Middleware** tab: it connects directly to the middleware's `/ws/client` endpoint and sends the same `COMMAND~ACTION:...` Tilde messages a real frontend would, letting you trigger a real ESP32's LEDs end-to-end through the middleware broadcast.
 
 ## Required Libraries
 

@@ -698,6 +698,34 @@ print(r.json())  # {"ok": True, "num_leds": 60}
 
 ---
 
+## Middleware Client (Tilde Protocol)
+
+In addition to the local port-81 WebSocket **server** documented above, each device also opens an outbound WebSocket **client** connection to the Java middleware (`Lagerverwaltung`, Tomcat) at `/ws/storage`, configured via `MW_HOST` / `MW_PORT` / `MW_PATH` in `config.h`. This is the production integration path; the port-81 server keeps working independently for `dev_testing_dashboard.html` / `mapping_tool.html`.
+
+The middleware speaks its own Tilde text protocol (`CMD~KEY:VALUE~KEY:VALUE`, see `Message`/`MessageParser` in `de.ross.websocket.protocol`) rather than JSON. The middleware broadcasts every `COMMAND~...` message it receives from a browser client (`/ws/client`) to **all** connected shelf nodes — there is no per-shelf routing. Each device silently ignores locations it doesn't own (`findLocation()` returns null for names not in its own `mapping.json`), so broadcasting to all 3 shelves is safe and requires no extra configuration.
+
+Only a subset of the full JSON command set is supported over this channel — the commands needed for the pick/confirm/putaway warehouse flow. Everything else (`set`, `range`, `multi`, `brightness`, `effect`, `mode`, `set_leds`, `get_config`) remains local-only (port 81 / JSON), and can be added to the middleware channel later using the same pattern in `mw_client.cpp`.
+
+| `ACTION` | Params | Equivalent JSON command |
+|----------|--------|--------------------------|
+| `LOCATION` | `NAME`, `R`, `G`, `B`, `BRIGHTNESS` (optional) | `location` |
+| `CONFIRM` | `NAME` | `confirm` |
+| `LOCATION_CLEAR` | `NAME` | `location_clear` |
+| `CLEAR` | — | `clear` |
+| `FILL` | `R`, `G`, `B` | `fill` |
+
+```
+COMMAND~ACTION:LOCATION~NAME:A6~R:255~G:255~B:0~BRIGHTNESS:180
+COMMAND~ACTION:CONFIRM~NAME:A6
+COMMAND~ACTION:LOCATION_CLEAR~NAME:A6
+COMMAND~ACTION:CLEAR
+COMMAND~ACTION:FILL~R:0~G:0~B:0
+```
+
+This channel is fire-and-forget — the middleware only processes `PING`/`PONG` replies from storage sessions, so the device does not send a response for these commands. Unknown `ACTION` values and locations not owned by this shelf are logged to Serial only.
+
+---
+
 ## Error Reference
 
 | Message | Cause |

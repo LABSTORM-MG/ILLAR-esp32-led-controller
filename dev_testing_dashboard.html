@@ -275,6 +275,7 @@
   <div class="tab" data-tab="location">Locations</div>
   <div class="tab" data-tab="address">Address</div>
   <div class="tab" data-tab="raw">Raw JSON</div>
+  <div class="tab" data-tab="middleware">Middleware</div>
 </div>
 
 <!-- COLOUR TAB -->
@@ -487,6 +488,69 @@
         <option value='{"cmd":"locations","items":[{"name":"A6","r":255,"g":0,"b":0},{"name":"B3","r":0,"g":255,"b":0}]}'>locations batch</option>
         <option value='{"cmd":"set_leds","value":60}'>set_leds 60</option>
         <option value='{"cmd":"get_config"}'>get_config</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- MIDDLEWARE TAB -->
+<div class="tab-panel" id="tab-middleware">
+  <div class="section">
+    <h2>Middleware connection</h2>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px;">
+      Connects directly to the Java middleware's <code>/ws/client</code> endpoint (the same one the browser frontend uses) and
+      sends <code>COMMAND~ACTION:...</code> Tilde messages. The middleware broadcasts these to every connected shelf node on
+      <code>/ws/storage</code> — this exercises the real production path (middleware → ESP32) instead of the per-node JSON
+      connections above.
+    </p>
+    <div class="row">
+      <div class="field" style="flex:1"><label>WebSocket URL</label><input type="text" id="mw-url" value="ws://localhost:8080/Lagerverwaltung/ws/client" style="width:100%"></div>
+      <div class="status-badge badge-disconnected" id="mw-status-badge"><div class="dot"></div>Disconnected</div>
+    </div>
+    <div class="row">
+      <button class="primary" id="mw-connect-btn" onclick="mwConnect()">Connect</button>
+      <button class="danger-btn" id="mw-disconnect-btn" onclick="mwDisconnect()" style="display:none">Disconnect</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Location command</h2>
+    <div class="row">
+      <div class="field" style="flex:1"><label>Location name</label><input type="text" id="mw-loc-name" placeholder="A6" style="width:100%"></div>
+      <div class="field"><label>Colour</label><input type="color" id="mw-loc-color" value="#ffff00"></div>
+      <div class="field"><label>Brightness</label><input type="number" id="mw-loc-bright" value="255" min="0" max="255" style="width:70px"></div>
+    </div>
+    <div class="row">
+      <button class="primary" onclick="mwSendLocation()">Light location</button>
+      <button onclick="mwSendConfirm()">Confirm (green flash)</button>
+      <button class="danger-btn" onclick="mwSendLocationClear()">Clear location</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Fill / Clear all</h2>
+    <div class="row">
+      <div class="field"><label>Colour</label><input type="color" id="mw-fill-color" value="#ff0000"></div>
+      <button class="primary" onclick="mwSendFill()">Fill all</button>
+      <button class="danger-btn" onclick="mwSendClearAll()">Clear all</button>
+    </div>
+  </div>
+
+  <div class="section raw-section">
+    <h2>Send raw Tilde command</h2>
+    <textarea id="mw-raw">COMMAND~ACTION:LOCATION~NAME:A6~R:255~G:255~B:0</textarea>
+    <div class="row" style="margin-top:8px;">
+      <button class="primary" onclick="mwSendRaw()">Send</button>
+      <select id="mw-templates" onchange="mwApplyTemplate(this.value)" style="flex:1">
+        <option value="">— templates —</option>
+        <option value="COMMAND~ACTION:LOCATION~NAME:A6~R:255~G:255~B:0">location A6 yellow (pending pick)</option>
+        <option value="COMMAND~ACTION:LOCATION~NAME:A6~R:0~G:0~B:255">location A6 blue (inventory check)</option>
+        <option value="COMMAND~ACTION:LOCATION~NAME:A6~R:180~G:0~B:255">location A6 purple (putaway)</option>
+        <option value="COMMAND~ACTION:CONFIRM~NAME:A6">confirm A6 (green flash)</option>
+        <option value="COMMAND~ACTION:LOCATION_CLEAR~NAME:A6">location_clear A6</option>
+        <option value="COMMAND~ACTION:CLEAR">clear all</option>
+        <option value="COMMAND~ACTION:FILL~R:0~G:0~B:0">fill black</option>
+        <option value="PING">PING</option>
       </select>
     </div>
   </div>
@@ -960,6 +1024,86 @@ async function setNumLeds() {
   }
 }
 
+// ── Middleware tab (Tilde protocol, /ws/client → broadcast → /ws/storage) ──
+let mwSocket = null;
+let mwState  = "disconnected";
+
+function renderMwStatus() {
+  const badge = document.getElementById("mw-status-badge");
+  badge.className = "status-badge " + statusClass(mwState);
+  badge.innerHTML = `<div class="dot"></div>${statusLabel(mwState)}`;
+  document.getElementById("mw-connect-btn").style.display    = mwState === "connected" ? "none" : "inline-block";
+  document.getElementById("mw-disconnect-btn").style.display = mwState === "connected" ? "inline-block" : "none";
+}
+
+function mwConnect() {
+  if (mwSocket) return;
+  const url = document.getElementById("mw-url").value.trim();
+  if (!url) { log("Enter the middleware WebSocket URL.", "log-err"); return; }
+  mwState = "connecting";
+  renderMwStatus();
+  log(`Connecting to middleware (${url})...`);
+  const ws = new WebSocket(url);
+  mwSocket = ws;
+  ws.onopen = () => { mwState = "connected"; renderMwStatus(); log("Middleware connected", "log-in"); };
+  ws.onmessage = (e) => log(`← middleware: ${e.data}`, "log-in");
+  ws.onerror = () => { mwState = "error"; renderMwStatus(); log("Middleware connection error", "log-err"); };
+  ws.onclose = () => { mwSocket = null; mwState = "disconnected"; renderMwStatus(); log("Middleware disconnected", "log-sys"); };
+}
+
+function mwDisconnect() {
+  if (mwSocket) { mwSocket.close(); mwSocket = null; }
+  mwState = "disconnected";
+  renderMwStatus();
+}
+
+function mwSend(raw) {
+  if (!mwSocket || mwSocket.readyState !== 1) { log("Middleware not connected.", "log-err"); return; }
+  mwSocket.send(raw);
+  log(`→ middleware: ${raw}`, "log-out");
+}
+
+function tildeEncode(action, params) {
+  let s = "COMMAND~ACTION:" + action;
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== "") s += `~${k}:${v}`;
+  }
+  return s;
+}
+
+function mwSendLocation() {
+  const name = document.getElementById("mw-loc-name").value.trim();
+  if (!name) { log("Enter a location name.", "log-err"); return; }
+  const c = hexToRgb(document.getElementById("mw-loc-color").value);
+  const bright = parseInt(document.getElementById("mw-loc-bright").value);
+  mwSend(tildeEncode("LOCATION", { NAME: name, R: c.r, G: c.g, B: c.b, BRIGHTNESS: bright }));
+}
+function mwSendConfirm() {
+  const name = document.getElementById("mw-loc-name").value.trim();
+  if (!name) { log("Enter a location name.", "log-err"); return; }
+  mwSend(tildeEncode("CONFIRM", { NAME: name }));
+}
+function mwSendLocationClear() {
+  const name = document.getElementById("mw-loc-name").value.trim();
+  if (!name) { log("Enter a location name.", "log-err"); return; }
+  mwSend(tildeEncode("LOCATION_CLEAR", { NAME: name }));
+}
+function mwSendClearAll() { mwSend("COMMAND~ACTION:CLEAR"); }
+function mwSendFill() {
+  const c = hexToRgb(document.getElementById("mw-fill-color").value);
+  mwSend(tildeEncode("FILL", { R: c.r, G: c.g, B: c.b }));
+}
+function mwSendRaw() {
+  const raw = document.getElementById("mw-raw").value.trim();
+  if (!raw) return;
+  mwSend(raw);
+}
+function mwApplyTemplate(v) {
+  if (v) document.getElementById("mw-raw").value = v;
+  document.getElementById("mw-templates").value = "";
+}
+
+renderMwStatus();
 renderNodes();
 log("Dashboard ready. Select a node and click Connect.", "log-sys");
 </script>

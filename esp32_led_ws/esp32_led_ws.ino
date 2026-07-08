@@ -28,10 +28,11 @@
 #include "mapping_store.h"
 #include "http_api.h"
 #include "ws_api.h"
+#include "mw_client.h"
 
 // Server objects — declared here, accessed via extern in http_api.cpp and ws_api.cpp
 WebSocketsServer webSocket(81);
-WebServer        httpServer(80);
+WebServer httpServer(80);
 
 // ── Setup ─────────────────────────────────────
 void setup() {
@@ -40,7 +41,7 @@ void setup() {
 
   // Queue and mutex must exist before renderTask starts
   renderQueue = xQueueCreate(8, sizeof(LedCommand));
-  batchMutex  = xSemaphoreCreateMutex();
+  batchMutex = xSemaphoreCreateMutex();
 
   // Mount filesystem and load persisted config + mapping
   if (!LittleFS.begin(true)) {
@@ -56,11 +57,11 @@ void setup() {
   // covering a fixed MAX_LEDS_PER_TIER slice of the shared leds[] buffer.
   // Active length across the whole buffer is controlled via numLeds.
   // Direct leds[] access is safe here — renderTask hasn't started yet.
-  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_1, COLOR_ORDER>(leds + 0*MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_2, COLOR_ORDER>(leds + 1*MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_3, COLOR_ORDER>(leds + 2*MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_4, COLOR_ORDER>(leds + 3*MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_5, COLOR_ORDER>(leds + 4*MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_1, COLOR_ORDER>(leds + 0 * MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_2, COLOR_ORDER>(leds + 1 * MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_3, COLOR_ORDER>(leds + 2 * MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_4, COLOR_ORDER>(leds + 3 * MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<LED_TYPE, LED_PIN_TIER_5, COLOR_ORDER>(leds + 4 * MAX_LEDS_PER_TIER, MAX_LEDS_PER_TIER).setCorrection(TypicalLEDStrip);
   FastLED.setBrightness(MAX_BRIGHTNESS);
   fill_solid(leds, MAX_LEDS, CRGB::Black);
   FastLED.show();
@@ -69,11 +70,13 @@ void setup() {
   WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
     wifiConnected = true;
     statusChanged = true;
-  }, ARDUINO_EVENT_WIFI_STA_GOT_IP);
+  },
+               ARDUINO_EVENT_WIFI_STA_GOT_IP);
   WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
     wifiConnected = false;
     statusChanged = true;
-  }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  },
+               ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
 
   WiFi.setHostname(HOSTNAME);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -83,18 +86,23 @@ void setup() {
   // Direct leds[] access is safe here — renderTask hasn't started yet.
   uint8_t dot = 0;
   unsigned long wifiStart = millis();
-  while (WiFi.status() != WL_CONNECTED && millis()-wifiStart < 20000) {
-    leds[dot % numLeds] = CRGB::Blue; FastLED.show(); delay(300);
-    leds[dot % numLeds] = CRGB::Black; dot++; Serial.print(".");
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 20000) {
+    leds[dot % numLeds] = CRGB::Blue;
+    FastLED.show();
+    delay(300);
+    leds[dot % numLeds] = CRGB::Black;
+    dot++;
+    Serial.print(".");
   }
-  fill_solid(leds, MAX_LEDS, CRGB::Black); FastLED.show();
+  fill_solid(leds, MAX_LEDS, CRGB::Black);
+  FastLED.show();
 
   if (WiFi.status() == WL_CONNECTED) {
     wifiConnected = true;
     Serial.printf("\n[WiFi] IP: %s\n", WiFi.localIP().toString().c_str());
     if (MDNS.begin(HOSTNAME)) {
-      MDNS.addService("ws",  "tcp", 81);
-      MDNS.addService("http","tcp", 80);
+      MDNS.addService("ws", "tcp", 81);
+      MDNS.addService("http", "tcp", 80);
       Serial.printf("[mDNS] %s.local ready\n", HOSTNAME);
     }
   } else {
@@ -108,6 +116,9 @@ void setup() {
   webSocket.onEvent(onWebSocketEvent);
   Serial.println("[WS] Port 81 ready.");
 
+  // Outbound connection to the Java middleware — independent of the local server above.
+  mwClientBegin();
+
   // renderTask is the sole owner of leds[] from this point on
   xTaskCreatePinnedToCore(renderTask, "render", 4096, NULL, 1, NULL, 0);
 
@@ -118,7 +129,8 @@ void setup() {
   // Ready flash — enqueue green fill, wait, enqueue clear
   if (wifiConnected) {
     LedCommand cmd;
-    cmd.type = CMD_FILL; cmd.fill = {0, 255, 0};
+    cmd.type = CMD_FILL;
+    cmd.fill = { 0, 255, 0 };
     ledEnqueue(cmd);
     delay(400);
     cmd.type = CMD_CLEAR;
@@ -134,6 +146,7 @@ unsigned long lastWifiCheck = 0;
 void loop() {
   httpServer.handleClient();
   webSocket.loop();
+  mwClientLoop();
 
   // Periodic WiFi reconnect check
   if (millis() - lastWifiCheck > 10000) {
