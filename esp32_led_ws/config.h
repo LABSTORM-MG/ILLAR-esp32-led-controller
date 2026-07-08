@@ -24,8 +24,8 @@
 // avoid strapping pins where your wiring allows. GPIO12/13 are the C6's
 // native USB D-/D+ lines and cannot be used as LED outputs.
 #define NUM_TIERS       5
-#define LED_PIN_TIER_1  8
-#define LED_PIN_TIER_2  9
+#define LED_PIN_TIER_1  19
+#define LED_PIN_TIER_2  20
 #define LED_PIN_TIER_3  10
 #define LED_PIN_TIER_4  11
 #define LED_PIN_TIER_5  18
