@@ -4,6 +4,8 @@ ESP32-C6 firmware for WS2812B LED shelf guidance, part of the ILLAR warehouse sy
 
 Used as the `led-controller` git submodule of the main [storage-room](https://github.com/dejhfm/storage-room) repo, which also covers the frontend, InvenTree backend, and system-wide architecture.
 
+> **Note:** the main repo contains a successor firmware, `storage-controller/`, where pins, LED counts, location mapping, and the middleware connection are all configured at runtime via HTTP instead of at compile time. This firmware remains in use/reference for the original per-tier wiring approach — see `storage-controller/README.md` in the main repo for the differences.
+
 ## Setup
 
 1. Open `esp32_led_ws.ino` in the Arduino IDE (the sketch folder must be named `esp32_led_ws`).
